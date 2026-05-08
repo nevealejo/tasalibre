@@ -866,7 +866,7 @@ export default function TasaLibre() {
 
       for (let qi = 0; qi < queries.length; qi++) {
         setLoadStep(Math.min(qi + 2, 4));
-        const searchPrompt = "Busca en zonaprop.com.ar o argenprop.com propiedades similares: " + queries[qi] + ". IMPORTANTE: devuelve SOLO propiedades de la misma zona o calle. Ignora resultados de otras zonas. Lista precio USD, metros cuadrados, direccion exacta y fuente. Necesito al menos 6-8 resultados si los hay.";
+        const searchPrompt = "Busca en zonaprop o argenprop: " + queries[qi] + ". Solo propiedades de la misma zona. Lista: precio USD, m2, direccion, fuente. Max 6 resultados.";
         try {
           const searchRes = await fetch("/api/tasar", {
             method: "POST",
@@ -874,7 +874,7 @@ export default function TasaLibre() {
             signal: controller.signal,
             body: JSON.stringify({
               model: "claude-sonnet-4-6",
-              max_tokens: 800,
+              max_tokens: 400,
               tools: [{ type: "web_search_20250305", name: "web_search" }],
               messages: [{ role: "user", content: searchPrompt }]
             })
@@ -882,7 +882,7 @@ export default function TasaLibre() {
           const searchText = await searchRes.text();
           const searchData = JSON.parse(searchText);
           const textBlocks = (searchData.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-          if (textBlocks.trim()) comparablesData += "\nBusqueda " + (qi+1) + " (" + queries[qi] + "):\n" + textBlocks.slice(0, 800);
+          if (textBlocks.trim()) comparablesData += " | " + textBlocks.slice(0, 400);
         } catch(searchErr) { console.warn("Search failed:", searchErr.message); }
       }
 
@@ -890,7 +890,9 @@ export default function TasaLibre() {
 
       const msgContent = [];
       if (!skipContact) {
-        for (const p of photos.filter(Boolean)) {
+        // Max 2 fotos para no exceder el limite de tokens
+        const validPhotos = photos.filter(Boolean).slice(0, 2);
+        for (const p of validPhotos) {
           try {
             const b64 = p.dataUrl.split(",")[1];
             if (b64) msgContent.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } });
@@ -898,59 +900,36 @@ export default function TasaLibre() {
         }
       }
 
-      const prompt = [
-        "Sos un tasador inmobiliario matriculado con 20 anos de experiencia en Argentina.",
-        "Das valuaciones PRECISAS y CONSERVADORAS. Nunca infladas.",
-        "",
-        "PROPIEDAD A TASAR:",
-        "Tipo: " + tipo + (loteSubtipo ? " (" + loteSubtipo + ")" : "") + (casaSubtipo ? " " + casaSubtipo : ""),
-        "Direccion: " + address,
-        "Operacion: " + operacion,
-        "Sup. total: " + (supTotal||"?") + "m2" + (tipo !== "lote" ? " | Sup. cubierta: " + (supCub||"?") + "m2" : ""),
-        "Ambientes: " + ambientes + " | Dorm: " + dormitorios + " | Banos: " + banos,
-        "Antiguedad: " + (antiguedad||"?") + " anos | Estado: " + estado.replace(/_/g," "),
-        "Piso: " + (piso||"N/A") + " | Ascensor: " + (tipo==="departamento" ? (ascensor?"Si":"No") : "N/A") + " | Disposicion: " + (tipo==="departamento" ? (disposicion||"no especificada") : "N/A"),
-        "PH ubicacion: " + (phUbicacion||"N/A"),
-        "Casa subtipo: " + (tipo==="casa" ? (casaSubtipo||"N/A") + (casaSubtipo==="cerrado" ? " - " + casaNombreBarrio : "") : "N/A"),
-        "Local: altura=" + (alturaVigas?"Si":"No") + " vidriera=" + (vidriera?"Si":"No") + " cortinas=" + (cortinasMetalicas?"Si":"No") + " entrepiso=" + (entrepiso?"Si":"No"),
-        "Barrio cerrado: " + (nombreBarrioPrivado||"N/A"),
-        "Lote medidas: " + (tipo==="lote" ? (loteFrente||"?") + "m frente x " + (loteFondo||"?") + "m fondo" : "N/A"),
-        "Zonificacion: " + (zonificacion||"N/A"),
-        "Lote adicionales: " + (loteAdicionales.join(", ")||"ninguno"),
-        "Lote con edificacion: " + (tipo==="lote" ? (loteConEdificacion?"Si":"No") : "N/A"),
-        "Caracteristicas: " + (amenities.join(", ")||"ninguno"),
-        "",
-        comparablesData ? "COMPARABLES REALES: " + comparablesData + " USA estos precios como base. Son datos de ZonaProp/Argenprop." : "Sin comparables online. Usa tu conocimiento del mercado argentino.",
-        "",
-        "REGLAS CRITICAS:",
-        "1. PRECIO TECHO: cada zona tiene un maximo que el mercado no supera.",
-        "2. NUNCA uses precios de CABA para GBA o interior.",
-        "3. Barrios abiertos compiten con barrios cerrados — ese es su techo real.",
-        "4. GBA Sur/Oeste centros: casas USD 800-1200/m2 cubierto MAX.",
-        "5. Casas en barrios cerrados zona sur: USD 150.000-500.000 segun categoria.",
-        "6. Barrios cerrados zona norte premium: lotes USD 300-900/m2.",
-        "7. COMPARABLES PROXIMOS: incluir EXACTAMENTE 6 comparables, todos lo mas cercanos posible al inmueble.",
-        "   Direccion de referencia: " + address + ".",
-        "   Primero busca en la misma calle, luego calles perpendiculares cercanas.",
-        "   NUNCA uses comparables de otra zona, barrio o ciudad aunque sean del mismo tipo.",
-        "   Si los comparables encontrados son de zonas alejadas, indicalos como referencia y ajusta con criterio local.",
-        "8. Con los 6 comparables, calcula el precio promedio por m2, descarta outliers extremos, y usa ese promedio como base del valor final.",
-        "8b. Rango: maximo +-5% del valor central.",
-        "9. Se CONSERVADOR. Ante la duda, valor hacia abajo.",
-        "DISPOSICION EN DEPARTAMENTOS: Al frente = maximo valor. Lateral = -0% a -5%. Contrafrente = -5% a -15%. Interno = -15% a -25%.",
-        "ESCALA DE DETERIORO: leve -5/-10%. moderado -10/-20%. importante -20/-35%. severo -35/-50%. riesgo derrumbe = valor terreno.",
-        "Si hay riesgo estructural: alerta_estructural=true.",
-        "",
-        msgContent.length > 0 ? (tipo==="lote" ? "ANALISIS FOTOS DEL LOTE: 1.MEDIANERAS construidas? Si faltan implica costo. 2.NIVEL SUELO requiere relleno? 3.ARBOLES cantidad y costo extraccion. 4.ACCESIBILIDAD para camiones/maquinaria. 5.CONSTRUCCION EXISTENTE viable refaccionar o demoler?" : "Analiza fotos: materiales piso, terminaciones, humedad, grietas, roturas, pintura.") : "Sin fotos.",
-        "",
-        "CRITICO: Responde UNICAMENTE con el JSON. PROHIBIDO usar ```json o ``` o cualquier markdown. SOLO el JSON puro. Incluye EXACTAMENTE 6 comparables. Incluye siempre alerta_estructural:",
-        '{"valor_usd":0,"rango_min_usd":0,"rango_max_usd":0,"precio_m2_usd":0,"alerta_estructural":false,"scores":[{"nombre":"Terminaciones","valor":7},{"nombre":"Estado general","valor":7},{"nombre":"Luminosidad","valor":6},{"nombre":"Materiales","valor":6},{"nombre":"Distribucion","valor":7}],"comparables":[{"direccion":"Calle A 123","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":80,"precio_usd":0,"fuente":"ZonaProp"},{"direccion":"Calle B 456","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":90,"precio_usd":0,"fuente":"Argenprop"},{"direccion":"Calle C 789","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":75,"precio_usd":0,"fuente":"MercadoLibre"},{"direccion":"Calle D 321","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":85,"precio_usd":0,"fuente":"ZonaProp"},{"direccion":"Calle E 654","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":95,"precio_usd":0,"fuente":"Argenprop"},{"direccion":"Calle F 987","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":70,"precio_usd":0,"fuente":"MercadoLibre"}],"factores":[{"tipo":"pos","titulo":"Factor","descripcion":"Descripcion.","impacto":"+X%"},{"tipo":"neg","titulo":"Factor","descripcion":"Descripcion.","impacto":"-X%"},{"tipo":"neu","titulo":"Zona","descripcion":"Descripcion.","impacto":"Neutro"}],"analisis":"4 oraciones sobre el inmueble."}'
-      ].join("\n");
+      // Build compact prompt to stay under token limits
+      const propData = [
+        "Tipo:" + tipo + (loteSubtipo?"/"+loteSubtipo:"") + (casaSubtipo?"/"+casaSubtipo:"") + (casaNombreBarrio?" "+casaNombreBarrio:"") + (nombreBarrioPrivado?" "+nombreBarrioPrivado:""),
+        "Dir:" + address + " Op:" + operacion,
+        "Sup:" + (supTotal||"?") + "m2" + (tipo!=="lote"?" cub:"+(supCub||"?")+"m2":"") + " ant:" + (antiguedad||"?") + "a",
+        tipo!=="lote" ? "Amb:"+ambientes+" dorm:"+dormitorios+" ban:"+banos+" est:"+estado.replace(/_/g," ") : "",
+        tipo==="departamento" ? "piso:"+piso+" asc:"+(ascensor?"si":"no")+" disp:"+(disposicion||"-") : "",
+        tipo==="lote" ? "frente:"+loteFrente+"m fondo:"+loteFondo+"m zonif:"+zonificacion+" edif:"+(loteConEdificacion?"si":"no") : "",
+        amenities.length ? "extras:"+amenities.join(",") : "",
+        loteAdicionales.length ? "adicionales:"+loteAdicionales.join(",") : "",
+      ].filter(Boolean).join(" | ");
+
+      const comparablesCtx = comparablesData
+        ? "COMPARABLES(usa como base):" + comparablesData.slice(0, 800)
+        : "Sin comparables online.";
+
+      const prompt = "Sos tasador inmobiliario Argentina. CONSERVADOR y PRECISO.\n" +
+        "PROPIEDAD: " + propData + "\n" +
+        comparablesCtx + "\n" +
+        "REGLAS: 1)Precio techo por zona-nunca CABA para GBA. 2)Barrios abiertos compiten con cerrados. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n" +
+        (tipo==="departamento" ? "DISPOSICION: frente=max, lateral-5%, contrafrente-15%, interno-25%.\n" : "") +
+        "DETERIORO: leve-10%, mod-20%, imp-35%, severo-50%.\n" +
+        (msgContent.length>0 ? (tipo==="lote" ? "FOTOS LOTE: detecta medianeras,nivel suelo,arboles,accesibilidad,construccion.\n" : "FOTOS: analiza terminaciones,humedad,grietas,materiales.\n") : "") +
+        "RESPONDE SOLO JSON SIN MARKDOWN:\n" +
+        '{"valor_usd":0,"rango_min_usd":0,"rango_max_usd":0,"precio_m2_usd":0,"alerta_estructural":false,"scores":[{"nombre":"Terminaciones","valor":7},{"nombre":"Estado general","valor":7},{"nombre":"Luminosidad","valor":6},{"nombre":"Materiales","valor":6},{"nombre":"Distribucion","valor":7}],"comparables":[{"direccion":"Calle A","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":80,"precio_usd":0,"fuente":"ZonaProp"},{"direccion":"Calle B","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":90,"precio_usd":0,"fuente":"Argenprop"},{"direccion":"Calle C","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":75,"precio_usd":0,"fuente":"MercadoLibre"},{"direccion":"Calle D","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":85,"precio_usd":0,"fuente":"ZonaProp"},{"direccion":"Calle E","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":95,"precio_usd":0,"fuente":"Argenprop"},{"direccion":"Calle F","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":70,"precio_usd":0,"fuente":"MercadoLibre"}],"factores":[{"tipo":"pos","titulo":"Factor","descripcion":"Desc.","impacto":"+X%"},{"tipo":"neg","titulo":"Factor","descripcion":"Desc.","impacto":"-X%"},{"tipo":"neu","titulo":"Zona","descripcion":"Desc.","impacto":"Neutro"}],"analisis":"4 oraciones."}';
 
       msgContent.push({ type: "text", text: prompt });
       setLoadStep(5);
 
-      const bodyStr = JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 3000, messages: [{ role: "user", content: msgContent }] });
+      const bodyStr = JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 2000, messages: [{ role: "user", content: msgContent }] });
 
       let res, responseText;
       try {
