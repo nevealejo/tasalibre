@@ -422,9 +422,9 @@ const styles = `
 `
 
 const SLOT_LABELS = ["Sala / Living","Cocina","Dormitorio","Baño","Fachada","Otro"];
-const AMENITY_DEPTO = ["Cochera","Pileta","Gimnasio","SUM","Seguridad 24h","Terraza/Balcón","Parrilla"];
-const AMENITY_CASA = ["Cochera","Pileta","Patio","Jardín","Terraza","Parrilla","Galería/Quincho","Playroom","Dormitorio principal en suite","Techos altos","Aberturas DVH","Lavadero"];
-const AMENITY_PH = ["Cochera","Pileta","Patio","Parrilla","Aberturas DVH"];
+const _DEPTO = ["Cochera","Pileta","Gimnasio","SUM","Seguridad 24h","Parrilla"];
+const _CASA = ["Cochera","Pileta","Patio","Jardín","Terraza","Parrilla","Galería/Quincho","Playroom","Dormitorio principal en suite","Techos altos","Aberturas DVH","Lavadero"];
+const _PH = ["Cochera","Pileta","Patio","Parrilla","Aberturas DVH"];
 const LOAD_STEPS = ["Analizando fotos con IA","Buscando comparables en ZonaProp","Buscando en Argenprop y MercadoLibre","Calculando valor de mercado","Generando informe de tasación"];
 
 export default function TasaLibre() {
@@ -532,7 +532,7 @@ export default function TasaLibre() {
     } catch (e) { console.error("storage error:", e); }
   };
 
-  const toggleAmenity = v => setAmenities(a => a.includes(v) ? a.filter(x=>x!==v) : [...a,v]);
+  const toggle = v => setAmenities(a => a.includes(v) ? a.filter(x=>x!==v) : [...a,v]);
   const openFile = idx => { slotRef.current = idx; fileRef.current.value = ""; fileRef.current.click(); };
   // Smart adaptive compression:
   // 1024px is plenty for AI to detect materials, humidity, finishes
@@ -1292,7 +1292,7 @@ export default function TasaLibre() {
                     </div>
                     <div className="field"><label>Amenities del edificio</label>
                       <div className="chips">
-                        {AMENITY_DEPTO.map(a=>(<div key={a} className={"chip"+(amenities.includes(a)?" on":"")} onClick={()=>toggleAmenity(a)}>{a}</div>))}
+                        {_DEPTO.map(a=>(<div key={a} className={"chip"+(amenities.includes(a)?" on":"")} onClick={()=>toggle(a)}>{a}</div>))}
                       </div>
                     </div>
                   </>
@@ -1319,7 +1319,7 @@ export default function TasaLibre() {
                     </div>
                     <div className="field"><label>Características</label>
                       <div className="chips">
-                        {AMENITY_CASA.map(a=>(<div key={a} className={"chip"+(amenities.includes(a)?" on":"")} onClick={()=>toggleAmenity(a)}>{a}</div>))}
+                        {_CASA.map(a=>(<div key={a} className={"chip"+(amenities.includes(a)?" on":"")} onClick={()=>toggle(a)}>{a}</div>))}
                       </div>
                     </div>
                   </>
@@ -1353,7 +1353,7 @@ export default function TasaLibre() {
                     </div>
                     <div className="field"><label>Características</label>
                       <div className="chips">
-                        {AMENITY_PH.map(a=>(<div key={a} className={"chip"+(amenities.includes(a)?" on":"")} onClick={()=>toggleAmenity(a)}>{a}</div>))}
+                        {_PH.map(a=>(<div key={a} className={"chip"+(amenities.includes(a)?" on":"")} onClick={()=>toggle(a)}>{a}</div>))}
                       </div>
                     </div>
                   </>
@@ -1377,9 +1377,9 @@ export default function TasaLibre() {
                         <div className={"chip"+(vidriera?" on":"")} onClick={()=>setVidriera(!vidriera)}>Vidriera</div>
                         <div className={"chip"+(cortinasMetalicas?" on":"")} onClick={()=>setCortinasMetalicas(!cortinasMetalicas)}>Cortinas metálicas</div>
                         <div className={"chip"+(entrepiso?" on":"")} onClick={()=>setEntrepiso(!entrepiso)}>Entrepiso</div>
-                        <div className={"chip"+(amenities.includes("Planos aprobados")?" on":"")} onClick={()=>toggleAmenity("Planos aprobados")}>Planos aprobados</div>
-                        <div className={"chip"+(amenities.includes("Trifásica")?" on":"")} onClick={()=>toggleAmenity("Trifásica")}>Trifásica</div>
-                        <div className={"chip"+(amenities.includes("Gas natural")?" on":"")} onClick={()=>toggleAmenity("Gas natural")}>Gas natural</div>
+                        <div className={"chip"+(amenities.includes("Planos aprobados")?" on":"")} onClick={()=>toggle("Planos aprobados")}>Planos aprobados</div>
+                        <div className={"chip"+(amenities.includes("Trifásica")?" on":"")} onClick={()=>toggle("Trifásica")}>Trifásica</div>
+                        <div className={"chip"+(amenities.includes("Gas natural")?" on":"")} onClick={()=>toggle("Gas natural")}>Gas natural</div>
                       </div>
                     </div>
                   </>
