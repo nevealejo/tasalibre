@@ -890,7 +890,7 @@ export default function TasaLibre() {
 
       for (let qi = 0; qi < queries.length; qi++) {
         setLoadStep(Math.min(qi + 2, 4));
-        const searchPrompt = "Busca en zonaprop o argenprop: " + queries[qi] + ". Solo propiedades de la misma zona. Lista: precio USD, m2, direccion, fuente. Max 6 resultados.";
+        const searchPrompt = "Busca en zonaprop.com.ar o argenprop.com: " + queries[qi] + ". CRITICO: solo propiedades a maxima 3 cuadras de " + address + ". Si un comparable no esta en esa zona exacta, descartalo. Lista: precio USD, m2, direccion exacta, fuente.";
         try {
           const searchRes = await fetch("/api/tasar", {
             method: "POST",
@@ -900,7 +900,8 @@ export default function TasaLibre() {
               model: "claude-sonnet-4-6",
               max_tokens: 400,
               tools: [{ type: "web_search_20250305", name: "web_search" }],
-              messages: [{ role: "user", content: searchPrompt }]
+              messages: [{ role: "user", content: searchPrompt }],
+              _address: address
             })
           });
           const searchText = await searchRes.text();
