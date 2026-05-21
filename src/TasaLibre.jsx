@@ -887,10 +887,54 @@ export default function TasaLibre() {
 
       const queries = buildQueries();
       let comparablesData = "";
+      let streetContext = "";
+
+      // Geocodificar UNA SOLA VEZ antes del loop
+      try {
+        const geoRes = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=ar`,
+          { headers: { "User-Agent": "TasaLibre/1.0" } }
+        );
+        const geoData = await geoRes.json();
+        if (geoData.length) {
+          const { lat, lon } = geoData[0];
+          // Overpass para calles cercanas
+          const ovQuery = `[out:json][timeout:5];way(around:500,${lat},${lon})["highway"]["name"];out tags;`;
+          const ovRes = await fetch("https://overpass-api.de/api/interpreter", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `data=${encodeURIComponent(ovQuery)}`
+          });
+          const ovData = await ovRes.json();
+          const seen = new Set();
+          const streets = [];
+          for (const el of ovData.elements || []) {
+            const name = el.tags?.name;
+            if (name && !seen.has(name)) { seen.add(name); streets.push(name); }
+          }
+          if (streets.length < 3) {
+            // Ampliar a 1000m
+            const ovQuery2 = `[out:json][timeout:5];way(around:1000,${lat},${lon})["highway"]["name"];out tags;`;
+            const ovRes2 = await fetch("https://overpass-api.de/api/interpreter", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: `data=${encodeURIComponent(ovQuery2)}`
+            });
+            const ovData2 = await ovRes2.json();
+            for (const el of ovData2.elements || []) {
+              const name = el.tags?.name;
+              if (name && !seen.has(name)) { seen.add(name); streets.push(name); }
+            }
+          }
+          if (streets.length > 0) {
+            streetContext = `Buscar SOLO en estas calles cercanas: ${streets.slice(0,6).join(", ")}. `;
+          }
+        }
+      } catch(e) { console.warn("Geocoding failed:", e.message); }
 
       for (let qi = 0; qi < queries.length; qi++) {
         setLoadStep(Math.min(qi + 2, 4));
-        const searchPrompt = "Busca en zonaprop.com.ar o argenprop.com: " + queries[qi] + ". CRITICO: solo propiedades a maxima 3 cuadras de " + address + ". Si un comparable no esta en esa zona exacta, descartalo. Lista: precio USD, m2, direccion exacta, fuente.";
+        const searchPrompt = streetContext + "Busca en zonaprop.com.ar o argenprop.com: " + queries[qi] + ". Devuelve propiedades de la zona. Lista: precio USD, m2, direccion exacta, fuente.";
         try {
           const searchRes = await fetch("/api/tasar", {
             method: "POST",
@@ -900,8 +944,7 @@ export default function TasaLibre() {
               model: "claude-sonnet-4-6",
               max_tokens: 400,
               tools: [{ type: "web_search_20250305", name: "web_search" }],
-              messages: [{ role: "user", content: searchPrompt }],
-              _address: address
+              messages: [{ role: "user", content: searchPrompt }]
             })
           });
           const searchText = await searchRes.text();
