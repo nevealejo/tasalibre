@@ -557,7 +557,16 @@ export default function TasaLibre() {
   };
 
   const toggleAmenity = v => setAmenities(a => a.includes(v) ? a.filter(x=>x!==v) : [...a,v]);
-  const openFile = idx => { slotRef.current = idx; fileRef.current.value = ""; fileRef.current.click(); };
+  const openFile = idx => {
+    slotRef.current = idx;
+    // iOS Safari requires input to be in DOM and visible briefly
+    const input = fileRef.current;
+    input.value = "";
+    // Force synchronous click
+    input.style.display = "block";
+    input.click();
+    setTimeout(() => { input.style.display = "none"; }, 100);
+  };
   // Smart adaptive compression:
   // 1024px is plenty for AI to detect materials, humidity, finishes
   // Tries quality 0.82 first, if still too big reduces further
@@ -844,10 +853,11 @@ export default function TasaLibre() {
           ];
         }
         if (tipo === "departamento") {
+          const cocheraFilter = amenities.includes("Cochera") ? "con cochera " : "sin cochera ";
           return [
-            "departamento venta " + calleRef + barrio + " " + provincia + " " + dormRef + "precio dolares zonaprop",
-            "departamento venta " + barrio + " " + provincia + " " + ambientes + " ambientes dolares argenprop",
-            "depto venta " + barrio + " " + provincia + " " + supRef + dormRef + "dolares",
+            "departamento venta " + calleRef + barrio + " " + provincia + " " + dormRef + cocheraFilter + "precio dolares zonaprop",
+            "departamento venta " + barrio + " " + provincia + " " + ambientes + " ambientes " + cocheraFilter + "dolares argenprop",
+            "depto venta " + barrio + " " + provincia + " " + supRef + dormRef + cocheraFilter + "dolares",
           ];
         }
         if (tipo === "casa" && casaSubtipo === "cerrado") {
@@ -944,7 +954,8 @@ export default function TasaLibre() {
               model: "claude-sonnet-4-6",
               max_tokens: 400,
               tools: [{ type: "web_search_20250305", name: "web_search" }],
-              messages: [{ role: "user", content: searchPrompt }]
+              messages: [{ role: "user", content: searchPrompt }],
+              _meta: { address, tipo, operacion, barrio, supTotal, conCochera: amenities.includes("Cochera") }
             })
           });
           const searchText = await searchRes.text();
@@ -989,7 +1000,23 @@ export default function TasaLibre() {
         "PROPIEDAD: " + propData + "\n" +
         comparablesCtx + "\n" +
         "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n" +
-        "AJUSTES: Norte+5% Sur-4% Este/Oeste0%. Hall moderno+3% deteriorado-5%. Balcon+3%. Refaccionado+8% Estrenar+10% MuyBueno+4% Bueno0% Reciclar-15%. Cocina renovada+8% arenovar-7%. Bano renovado+7% arenovar-8%. Pisos porcelanato+8% ceramica vieja-5%. Luminoso+5% oscuro-10%. Expensas>250k mencionar negativo. PH ACCESO: usar el ajuste calculado en propData exactamente como esta.\n" +
+        "AJUSTES (aplicar sobre valor base de comparables):\n" +
+        "REGLA 1: evaluar estado PROMEDIO por categoria, no por ambiente. Si living tiene porcelanato y dormitorio ceramica vieja = ajuste pisos 0%.\n" +
+        "REGLA 2: ajuste total acumulado maximo +20% / minimo -30%. Si la suma supera ese techo, recortar proporcionalmente.\n" +
+        "REGLA 3 COCHERA: NO es ajuste porcentual. Si la propiedad tiene cochera buscar comparables CON cochera. Sin cochera buscar SIN cochera.\n" +
+        "DISPOSICION: frente 0% / lateral -5% / contrafrente -10% / interno -20%.\n" +
+        "ORIENTACION: norte +4% / sur -3% / este-oeste 0%.\n" +
+        "HALL: moderno +3% / buen estado 0% / antiguo prolijo -2% / deteriorado -5%.\n" +
+        "ASCENSOR: con ascensor 0% / sin ascensor hasta 2piso -5% / sin ascensor 3piso+ -10%.\n" +
+        "BALCON: con balcon +5% / sin balcon 0%.\n" +
+        "ESTADO GENERAL: estrenar +10% / refaccionado +7% / muy bueno +3% / bueno 0% / reciclar -15%.\n" +
+        "PISOS (promedio general): porcelanato rect nuevo +6% / porcelanato estandar +3% / ceramica ok 0% / ceramica vieja -4% / madera ok +5% / madera deteriorada -3%.\n" +
+        "COCINA: renovada completa +8% / buen estado +2% / vieja funcional 0% / a renovar -7%.\n" +
+        "BANOS: renovado completo +8% / buen estado +2% / funcional viejo 0% / a renovar -8%.\n" +
+        "LUMINOSIDAD: muy luminoso +4% / normal 0% / poco luminoso -4% / muy oscuro -8%.\n" +
+        "EXPENSAS: hasta $100k neutro / $100k-$250k mencion / mas de $250k -3% + mencion explicita.\n" +
+        "DETERIORO ESTRUCTURAL: leve -8% / moderado -18% / importante -30% / severo -45% / riesgo derrumbe = valor terreno.\n" +
+        "PH ACCESO: usar ajuste calculado en propData exactamente.\n" +
         "ANTI-DUPLICACION: UN solo factor por categoria. No repetir el mismo atributo dos veces.\n" +
         (tipo==="departamento" ? "DISPOSICION: frente=max, lateral-5%, contrafrente-15%, interno-25%.\n" : "") +
         "DETERIORO: leve-10%, mod-20%, imp-35%, severo-50%.\n" +
@@ -1104,7 +1131,7 @@ export default function TasaLibre() {
   return (
     <>
       <style>{styles}</style>
-      <input ref={fileRef} type="file" accept="image/*,image/heic,image/heif" style={{display:"none"}} onChange={onFile}/>
+      <input ref={fileRef} type="file" accept="image/*,image/heic,image/heif" style={{display:"none",position:"fixed",top:0,left:0}} onChange={onFile}/>
       <div className="tasa-root">
 
         <nav className="tasa-nav">
