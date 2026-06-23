@@ -83,24 +83,26 @@ const styles = `
     min-height: calc(100vh - 60px);
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
-    padding: 60px 24px 80px;
+    padding: 48px 24px 72px;
     text-align: center;
     position: relative; overflow: hidden;
   }
   .hero-bg {
     position: absolute; inset: 0; z-index: 0; pointer-events: none;
     background:
-      radial-gradient(ellipse 70% 50% at 50% -10%, rgba(27,79,216,.08) 0%, transparent 70%),
-      radial-gradient(ellipse 40% 40% at 80% 80%, rgba(14,166,107,.05) 0%, transparent 60%);
+      radial-gradient(ellipse 80% 60% at 50% -5%, rgba(27,79,216,0.07) 0%, transparent 65%),
+      radial-gradient(ellipse 50% 40% at 90% 90%, rgba(14,166,107,0.05) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 30% at 10% 70%, rgba(27,79,216,0.04) 0%, transparent 50%);
   }
-  .hero-inner { position: relative; z-index: 1; max-width: 580px; }
+  .hero-inner { position: relative; z-index: 1; max-width: 560px; width: 100%; }
+  .hero-logo-wrap { margin-bottom: 28px; display: flex; justify-content: center; }
   .hero-pill {
     display: inline-flex; align-items: center; gap: 6px;
     background: var(--white); border: 1px solid var(--border);
     box-shadow: var(--shadow-sm);
     border-radius: 100px; padding: 6px 14px 6px 8px;
     font-size: 12px; font-weight: 500; color: var(--ink-2);
-    margin-bottom: 28px;
+    margin-bottom: 24px;
   }
   .pill-dot {
     width: 20px; height: 20px; border-radius: 50%;
@@ -109,32 +111,34 @@ const styles = `
   }
   .hero h1 {
     font-family: 'Fraunces', serif;
-    font-size: clamp(36px, 7vw, 60px);
-    font-weight: 600; line-height: 1.1; letter-spacing: -.02em;
-    color: var(--ink); margin-bottom: 20px;
+    font-size: clamp(38px, 8vw, 64px);
+    font-weight: 700; line-height: 1.08; letter-spacing: -.025em;
+    color: var(--ink); margin-bottom: 18px;
   }
   .hero h1 em { font-style: italic; color: var(--azul); font-weight: 300; }
   .hero-sub {
-    font-size: 16px; color: var(--ink-3); line-height: 1.65;
-    margin-bottom: 36px; max-width: 440px; margin-left: auto; margin-right: auto;
+    font-size: 16px; color: var(--ink-3); line-height: 1.7;
+    margin-bottom: 36px; max-width: 400px; margin-left: auto; margin-right: auto;
   }
-  .hero-actions { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .hero-actions { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-bottom: 0; }
   .hero-trust {
     display: flex; align-items: center; gap: 6px;
     font-size: 12px; color: var(--ink-4);
   }
   .hero-trust svg { color: var(--verde); }
   .hero-stats {
-    display: flex; gap: 0; margin-top: 56px;
+    display: flex; gap: 0; margin-top: 52px;
     background: var(--white); border: 1px solid var(--border);
-    border-radius: var(--radius); box-shadow: var(--shadow-sm);
+    border-radius: var(--radius); box-shadow: var(--shadow-md);
     overflow: hidden;
   }
   .hero-stat {
-    flex: 1; padding: 20px 24px; text-align: center;
+    flex: 1; padding: 20px 16px; text-align: center;
     border-right: 1px solid var(--border);
   }
   .hero-stat:last-child { border-right: none; }
+  .stat-num { display: block; font-size: 22px; font-weight: 800; color: var(--azul); letter-spacing: -0.5px; }
+  .stat-label { display: block; font-size: 10px; color: var(--ink-4); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.06em; }
   .stat-num {
     font-family: 'Fraunces', serif;
     font-size: 28px; font-weight: 600; color: var(--azul);
@@ -1000,29 +1004,42 @@ export default function TasaLibre() {
         "PROPIEDAD: " + propData + "\n" +
         comparablesCtx + "\n" +
         "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n" +
-        "AJUSTES (aplicar sobre valor base de comparables):\n" +
-        "REGLA 1: evaluar estado PROMEDIO por categoria, no por ambiente. Si living tiene porcelanato y dormitorio ceramica vieja = ajuste pisos 0%.\n" +
-        "REGLA 2: ajuste total acumulado maximo +20% / minimo -30%. Si la suma supera ese techo, recortar proporcionalmente.\n" +
-        "REGLA 3 COCHERA: NO es ajuste porcentual. Si la propiedad tiene cochera buscar comparables CON cochera. Sin cochera buscar SIN cochera.\n" +
-        "DISPOSICION: frente 0% / lateral -5% / contrafrente -10% / interno -20%.\n" +
-        "ORIENTACION: norte +4% / sur -3% / este-oeste 0%.\n" +
+        "MODELO DE VALUACION:\n" +
+        "PASO 1 - BASE: usar precio/m2 promedio de los comparables encontrados. Ese promedio YA refleja el mercado real de la zona incluyendo propiedades en distintos estados.\n" +
+        "PASO 2 - ANCLA: identificar el comparable mas similar en superficie y tipologia y usarlo como referencia principal.\n" +
+        "PASO 3 - AJUSTES: aplicar SOLO diferencias respecto al promedio zonal. Si los comparables ya incluyen propiedades deterioradas, el ajuste por estado es minimo o cero.\n" +
+        "PASO 4 - TECHO DURO: ajuste total maximo +15% / minimo -20%. IRROMPIBLE. Recortar si se supera.\n" +
+        "\n" +
+        "REGLAS CRITICAS:\n" +
+        "REGLA 1 - UN SOLO FACTOR DE ESTADO: Estado general, deterioro estructural y antiguedad describen lo mismo. Elegir el mas representativo y aplicar UNO SOLO. NUNCA acumular los tres.\n" +
+        "REGLA 2 - COCHERA ES FILTRO NO AJUSTE: comparables ya filtrados por cochera. No aplicar porcentaje por cochera.\n" +
+        "REGLA 3 - ORIENTACION INFORMATIVA: mencionar orientacion en el analisis pero aplicar 0% de ajuste. No sube ni baja el precio.\n" +
+        "REGLA 4 - DEMOLICION: si hay riesgo de derrumbe, comparar con terrenos de la zona, no con propiedades.\n" +
+        "\n" +
+        "AJUSTES ESTRUCTURALES (caracteristicas fijas, aplicar siempre):\n" +
+        "DISPOSICION: frente 0% / lateral -5% / contrafrente -10% / interno -12%.\n" +
+        "ASCENSOR: con 0% / sin hasta 2do piso -5% / sin 3ro+ -10%.\n" +
+        "BALCON: con balcon +5%.\n" +
         "HALL: moderno +3% / buen estado 0% / antiguo prolijo -2% / deteriorado -5%.\n" +
-        "ASCENSOR: con ascensor 0% / sin ascensor hasta 2piso -5% / sin ascensor 3piso+ -10%.\n" +
-        "BALCON: con balcon +5% / sin balcon 0%.\n" +
-        "ESTADO GENERAL: estrenar +10% / refaccionado +7% / muy bueno +3% / bueno 0% / reciclar -15%.\n" +
-        "PISOS (promedio general): porcelanato rect nuevo +6% / porcelanato estandar +3% / ceramica ok 0% / ceramica vieja -4% / madera ok +5% / madera deteriorada -3%.\n" +
-        "COCINA: renovada completa +8% / buen estado +2% / vieja funcional 0% / a renovar -7%.\n" +
-        "BANOS: renovado completo +8% / buen estado +2% / funcional viejo 0% / a renovar -8%.\n" +
-        "LUMINOSIDAD: muy luminoso +4% / normal 0% / poco luminoso -4% / muy oscuro -8%.\n" +
-        "EXPENSAS: hasta $100k neutro / $100k-$250k mencion / mas de $250k -3% + mencion explicita.\n" +
-        "DETERIORO ESTRUCTURAL: leve -8% / moderado -18% / importante -30% / severo -45% / riesgo derrumbe = valor terreno.\n" +
         "PH ACCESO: usar ajuste calculado en propData exactamente.\n" +
-        "ANTI-DUPLICACION: UN solo factor por categoria. No repetir el mismo atributo dos veces.\n" +
-        (tipo==="departamento" ? "DISPOSICION: frente=max, lateral-5%, contrafrente-15%, interno-25%.\n" : "") +
-        "DETERIORO: leve-10%, mod-20%, imp-35%, severo-50%.\n" +
+        "\n" +
+        "AJUSTE DE ESTADO (elegir UNO solo, el mas representativo):\n" +
+        "Muy por encima del promedio zonal (a estrenar / refaccionado a nuevo): +8%.\n" +
+        "Por encima del promedio (muy bueno): +4%.\n" +
+        "En linea con el promedio (bueno): 0%.\n" +
+        "Por debajo del promedio (a reciclar): -8%.\n" +
+        "Muy deteriorado con problemas estructurales: -15%.\n" +
+        "\n" +
+        "AJUSTES SECUNDARIOS (solo si hay diferencia clara respecto al promedio):\n" +
+        "COCINA renovada a nuevo: +5%. A renovar: -5%.\n" +
+        "BANOS renovados a nuevo: +5%. A renovar: -5%.\n" +
+        "LUMINOSIDAD muy superior al promedio: +3%. Muy inferior: -3%.\n" +
+        "EXPENSAS mas de $250k: mencionar negativamente en analisis.\n" +
+        "\n" +
+        "BLOQUE DE REFACCION: si y solo si cocina + banos + pisos estan todos deteriorados simultaneamente segun las fotos, incluir en el campo 'costo_refaccion_usd' el calculo: superficie_cubierta x 650. Sino, poner 0.\n" +
         (msgContent.length>0 ? (tipo==="lote" ? "FOTOS LOTE: detecta medianeras,nivel suelo,arboles,accesibilidad,construccion.\n" : "FOTOS: analiza terminaciones,humedad,grietas,materiales.\n") : "") +
         "RESPONDE SOLO JSON SIN MARKDOWN:\n" +
-        '{"valor_usd":0,"rango_min_usd":0,"rango_max_usd":0,"precio_m2_usd":0,"alerta_estructural":false,"scores":[{"nombre":"Terminaciones","valor":7},{"nombre":"Estado general","valor":7},{"nombre":"Luminosidad","valor":6},{"nombre":"Materiales","valor":6},{"nombre":"Distribucion","valor":7}],"comparables":[{"direccion":"Calle A","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":80,"precio_usd":0,"fuente":"ZonaProp"},{"direccion":"Calle B","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":90,"precio_usd":0,"fuente":"Argenprop"},{"direccion":"Calle C","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":75,"precio_usd":0,"fuente":"MercadoLibre"},{"direccion":"Calle D","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":85,"precio_usd":0,"fuente":"ZonaProp"},{"direccion":"Calle E","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":95,"precio_usd":0,"fuente":"Argenprop"},{"direccion":"Calle F","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":70,"precio_usd":0,"fuente":"MercadoLibre"}],"factores":[{"tipo":"pos","titulo":"Factor","descripcion":"Desc.","impacto":"+X%"},{"tipo":"neg","titulo":"Factor","descripcion":"Desc.","impacto":"-X%"},{"tipo":"neu","titulo":"Zona","descripcion":"Desc.","impacto":"Neutro"}],"analisis":"4 oraciones."}';
+        '{"valor_usd":0,"rango_min_usd":0,"rango_max_usd":0,"precio_m2_usd":0,"alerta_estructural":false,"costo_refaccion_usd":0,"scores":[{"nombre":"Terminaciones","valor":7},{"nombre":"Estado general","valor":7},{"nombre":"Luminosidad","valor":6},{"nombre":"Materiales","valor":6},{"nombre":"Distribucion","valor":7}],"comparables":[{"direccion":"Calle A","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":80,"precio_usd":0,"fuente":"ZonaProp"},{"direccion":"Calle B","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":90,"precio_usd":0,"fuente":"Argenprop"},{"direccion":"Calle C","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":75,"precio_usd":0,"fuente":"MercadoLibre"},{"direccion":"Calle D","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":85,"precio_usd":0,"fuente":"ZonaProp"},{"direccion":"Calle E","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":95,"precio_usd":0,"fuente":"Argenprop"},{"direccion":"Calle F","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":70,"precio_usd":0,"fuente":"MercadoLibre"}],"factores":[{"tipo":"pos","titulo":"Factor","descripcion":"Desc.","impacto":"+X%"},{"tipo":"neg","titulo":"Factor","descripcion":"Desc.","impacto":"-X%"},{"tipo":"neu","titulo":"Zona","descripcion":"Desc.","impacto":"Neutro"}],"analisis":"4 oraciones."}';
 
       msgContent.push({ type: "text", text: prompt });
       setLoadStep(5);
@@ -1092,7 +1109,7 @@ export default function TasaLibre() {
   };
 
   const fmt = n => "USD " + Number(n).toLocaleString("es-AR");
-  const WA_NUM = "NUMERO_WA";
+  const WA_NUM = "5491140356742";
   const waLink = (res) => {
     const msg = "Hola! Acabo de tasar mi " + tipo + " en " + (res ? res.address : "") + " con TasaLibre y me dio un valor de " + (res ? fmt(res.valor_usd) : "") + ". Me gustaria hablar con un asesor.";
     return "https://wa.me/" + WA_NUM + "?text=" + encodeURIComponent(msg);
@@ -1150,25 +1167,23 @@ export default function TasaLibre() {
           <div className="hero">
             <div className="hero-bg"/>
             <div className="hero-inner">
-              <div style={{marginBottom:24,display:"flex",justifyContent:"center"}}>
-                <div style={{background:"rgba(255,255,255,0.12)",backdropFilter:"blur(8px)",borderRadius:20,padding:"18px 32px",display:"inline-block"}}>
-                  <img src={LOGO_SRC} alt="TasaLibre" style={{height:100,width:"auto",display:"block",filter:"drop-shadow(0 2px 8px rgba(0,0,0,0.2))"}}/>
-                </div>
+              <div className="hero-logo-wrap">
+                <img src={LOGO_SRC} alt="TasaLibre" style={{height:140,width:"auto",display:"block",filter:"drop-shadow(0 4px 20px rgba(27,79,216,0.15))"}}/>
               </div>
               <div className="hero-pill">
                 <div className="pill-dot"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                 100% gratuito · Sin registrarse · Sin compromiso
               </div>
               <h1>Conocé el valor real<br/>de tu <em>propiedad</em></h1>
-              <p className="hero-sub">Subí fotos, completá algunos datos y nuestra IA analiza el estado del inmueble, busca comparables reales y te da una tasación profesional al instante.</p>
+              <p className="hero-sub">Nuestra IA analiza las fotos, busca comparables reales del mercado y te da una tasación profesional en minutos.</p>
               <div className="hero-actions">
-                <button className="btn-primary" onClick={()=>{setScreen("wizard");setStep(1);}}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
-                  Tasar mi propiedad
+                <button className="btn-primary" style={{fontSize:16,padding:"15px 32px",borderRadius:12}} onClick={()=>{setScreen("wizard");setStep(1);}}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+                  Tasar mi propiedad gratis
                 </button>
                 <div className="hero-trust">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  Sin datos de tarjeta · Sin spam
+                  Sin tarjeta · Sin spam · Sin compromiso
                 </div>
               </div>
               <div className="hero-stats">
@@ -1831,6 +1846,17 @@ export default function TasaLibre() {
               </div>
             )}
 
+            {result.costo_refaccion_usd > 0 && (
+                <div style={{background:"#FFF8E7",border:"1.5px solid #F59E0B",borderRadius:12,padding:"16px 20px",marginBottom:16}}>
+                  <div style={{fontWeight:700,color:"#92400E",fontSize:14,marginBottom:6}}>Refacción integral recomendada</div>
+                  <div style={{fontSize:13,color:"#78350F",lineHeight:1.6}}>
+                    Inversión estimada: <strong>USD {result.costo_refaccion_usd.toLocaleString("es-AR")}</strong> ({supCub||supTotal} m² × USD 650/m²)
+                  </div>
+                  <div style={{fontSize:12,color:"#92400E",marginTop:8}}>
+                    Valor estimado post-refacción: <strong>USD {(result.valor_usd + result.costo_refaccion_usd).toLocaleString("es-AR")}</strong>
+                  </div>
+                </div>
+              )}
             {result.alerta_estructural && (
               <div style={{background:"#FFF8ED",border:"1.5px solid #F59E0B",borderRadius:"var(--radius)",padding:"20px",marginBottom:16,display:"flex",alignItems:"flex-start",gap:14}}>
                 <div style={{fontSize:28,flexShrink:0,lineHeight:1}}>⚠️</div>
