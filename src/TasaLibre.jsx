@@ -644,7 +644,7 @@ export default function TasaLibre() {
 
   
   // ─── Generador de PDF via print ─────────────────────────────────────────
-  const generatePDF = (result, address) => {
+  const generatePDF = (result, address, photos = []) => {
     const fmt = n => 'USD ' + Number(n).toLocaleString('es-AR');
     const today = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' });
     const comps = (result.comparables || []).filter(c => c.precio_usd > 0 && c.m2 > 0);
@@ -683,6 +683,16 @@ export default function TasaLibre() {
           <div style="font-size:10px;color:${factorColor(f.tipo)};font-weight:600;margin-top:2px;">${f.impacto}</div>
         </div>
       </div>`).join('');
+
+    const validPhotos = (photos || []).filter(p => p && p.dataUrl);
+    const fotosHtml = validPhotos.length > 0 ? `
+      <div style="margin-top:24px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#8896A5;margin-bottom:12px;">FOTOS DE LA PROPIEDAD</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          ${validPhotos.map(p => `<img src="${p.dataUrl}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid #E2E8F0;"/>`).join('')}
+        </div>
+      </div>` : '';
+
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -784,6 +794,7 @@ export default function TasaLibre() {
       <div class="card-title">Análisis detallado</div>
       <p style="font-size:12px;color:#556070;line-height:1.8;">${result.analisis}</p>
     </div>` : ''}
+  ${fotosHtml}
   </div>
 
   <div class="footer">
@@ -1928,7 +1939,7 @@ export default function TasaLibre() {
               <br/><br/>
               <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
                 <button className="btn-ghost" onClick={resetAll}>← Nueva tasación</button>
-                <button className="btn-outline" onClick={()=>generatePDF(result, result.address)}>
+                <button className="btn-outline" onClick={()=>generatePDF(result, result.address, photos)}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                   Descargar informe PDF
                 </button>
