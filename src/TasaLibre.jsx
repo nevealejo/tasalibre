@@ -853,60 +853,64 @@ export default function TasaLibre() {
       const dormRef = (tipo === "departamento" || tipo === "casa" || tipo === "ph") ? dormitorios + " dormitorios " : "";
 
       const buildQueries = () => {
+        const op = operacion === "alquiler" ? "alquiler" : "venta";
+        const moneda = operacion === "alquiler" ? "pesos mensuales" : "dolares";
+        const monedaShort = operacion === "alquiler" ? "pesos" : "dolares";
+
         if (tipo === "lote" && loteSubtipo === "cerrado") {
           return [
-            nombreBarrioPrivado + " lote venta precio dolares zonaprop",
-            nombreBarrioPrivado + " terreno venta dolares argenprop",
-            nombreBarrioPrivado + " " + barrio + " lote venta precio dolares",
+            nombreBarrioPrivado + " lote " + op + " precio " + monedaShort + " zonaprop",
+            nombreBarrioPrivado + " terreno " + op + " " + monedaShort + " argenprop",
+            nombreBarrioPrivado + " " + barrio + " lote " + op + " precio " + monedaShort,
           ];
         }
         if (tipo === "lote" && loteSubtipo === "urbano") {
           return [
-            "lote venta " + calleRef + barrio + " " + provincia + " precio dolares zonaprop",
-            "terreno venta " + barrio + " " + provincia + " " + supRef + "precio dolares argenprop",
-            "lote urbano " + barrio + " " + provincia + " venta dolares mercadolibre inmuebles",
+            "lote " + op + " " + calleRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
+            "terreno " + op + " " + barrio + " " + provincia + " " + supRef + "precio " + monedaShort + " argenprop",
+            "lote urbano " + barrio + " " + provincia + " " + op + " " + monedaShort + " mercadolibre inmuebles",
           ];
         }
         if (tipo === "departamento") {
           const cocheraFilter = amenities.includes("Cochera") ? "con cochera " : "sin cochera ";
           return [
-            "departamento venta " + calleRef + barrio + " " + provincia + " " + dormRef + cocheraFilter + "precio dolares zonaprop",
-            "departamento venta " + barrio + " " + provincia + " " + ambientes + " ambientes " + cocheraFilter + "dolares argenprop",
-            "depto venta " + barrio + " " + provincia + " " + supRef + dormRef + cocheraFilter + "dolares",
+            "departamento " + op + " " + calleRef + barrio + " " + provincia + " " + dormRef + cocheraFilter + "precio " + monedaShort + " zonaprop",
+            "departamento " + op + " " + barrio + " " + provincia + " " + ambientes + " ambientes " + cocheraFilter + monedaShort + " argenprop",
+            "depto " + op + " " + barrio + " " + provincia + " " + supRef + dormRef + cocheraFilter + monedaShort,
           ];
         }
         if (tipo === "casa" && casaSubtipo === "cerrado") {
           return [
-            casaNombreBarrio + " casa venta precio dolares zonaprop",
-            casaNombreBarrio + " " + barrio + " casa venta dolares argenprop",
-            casaNombreBarrio + " housing venta dolares",
+            casaNombreBarrio + " casa " + op + " precio " + monedaShort + " zonaprop",
+            casaNombreBarrio + " " + barrio + " casa " + op + " " + monedaShort + " argenprop",
+            casaNombreBarrio + " housing " + op + " " + monedaShort,
           ];
         }
         if (tipo === "casa") {
           return [
-            "casa venta " + calleRef + barrio + " " + provincia + " " + dormRef + "precio dolares zonaprop",
-            "casa venta " + barrio + " " + provincia + " " + supRef + "dolares argenprop",
-            "casa " + barrio + " " + provincia + " " + dormRef + supRef + "venta dolares",
+            "casa " + op + " " + calleRef + barrio + " " + provincia + " " + dormRef + "precio " + monedaShort + " zonaprop",
+            "casa " + op + " " + barrio + " " + provincia + " " + supRef + monedaShort + " argenprop",
+            "casa " + barrio + " " + provincia + " " + dormRef + supRef + op + " " + monedaShort,
           ];
         }
         if (tipo === "ph") {
           return [
-            "PH venta " + calleRef + barrio + " " + provincia + " precio dolares zonaprop",
-            "PH venta " + barrio + " " + provincia + " " + ambientes + " ambientes dolares argenprop",
-            "ph " + barrio + " " + provincia + " venta dolares",
+            "PH " + op + " " + calleRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
+            "PH " + op + " " + barrio + " " + provincia + " " + ambientes + " ambientes " + monedaShort + " argenprop",
+            "ph " + barrio + " " + provincia + " " + op + " " + monedaShort,
           ];
         }
         if (tipo === "local") {
           return [
-            "local comercial venta " + calleRef + barrio + " " + provincia + " precio dolares zonaprop",
-            "local venta " + barrio + " " + provincia + " " + supRef + "dolares argenprop",
-            "local comercial " + barrio + " " + provincia + " venta dolares mercadolibre",
+            "local comercial " + op + " " + calleRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
+            "local " + op + " " + barrio + " " + provincia + " " + supRef + monedaShort + " argenprop",
+            "local comercial " + barrio + " " + provincia + " " + op + " " + monedaShort + " mercadolibre",
           ];
         }
         return [
-          tipo + " venta " + calleRef + barrio + " " + provincia + " precio dolares zonaprop",
-          tipo + " venta " + barrio + " " + provincia + " dolares argenprop",
-          tipo + " venta " + barrio + " " + provincia + " dolares mercadolibre inmuebles",
+          tipo + " " + op + " " + calleRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
+          tipo + " " + op + " " + barrio + " " + provincia + " " + monedaShort + " argenprop",
+          tipo + " " + op + " " + barrio + " " + provincia + " " + monedaShort + " mercadolibre inmuebles",
         ];
       };
 
@@ -1015,6 +1019,7 @@ export default function TasaLibre() {
         "PROPIEDAD: " + propData + "\n" +
         comparablesCtx + "\n" +
         "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n" +
+        "OPERACION: " + (operacion === "alquiler" ? "ALQUILER - calcular valor de alquiler mensual en PESOS ARGENTINOS. Los comparables son precios de alquiler, NO de venta." : "VENTA - calcular valor de venta en DOLARES AMERICANOS.") + "\n" +
         "MODELO DE VALUACION:\n" +
         "PASO 1 - BASE: usar precio/m2 promedio de los comparables encontrados. Ese promedio YA refleja el mercado real de la zona incluyendo propiedades en distintos estados.\n" +
         "PASO 2 - ANCLA: identificar el comparable mas similar en superficie y tipologia y usarlo como referencia principal.\n" +
