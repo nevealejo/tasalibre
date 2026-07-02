@@ -438,7 +438,7 @@ const styles = `
 
 const SLOT_LABELS = ["Sala / Living","Cocina","Dormitorio","Baño","Fachada","Otro"];
 const AMENITY_DEPTO = ["Cochera","Cochera doble","Pileta","Gimnasio","SUM","Seguridad 24h","Parrilla"];
-const AMENITY_CASA = ["Cochera","Cochera doble","Pileta","Patio","Jardín","Terraza","Parrilla","Galería/Quincho","Playroom","Dormitorio principal en suite","Techos altos","Aberturas DVH","Lavadero"];
+const AMENITY_CASA = ["Cochera","Cochera doble","Pileta","Patio","Jardín","Terraza","Parrilla","Galería/Quincho","Playroom","Dormitorio principal en suite","Techos altos","Aberturas DVH","Lavadero","Lote a laguna"];
 const AMENITY_PH = ["Cochera","Cochera doble","Pileta","Patio","Parrilla","Aberturas DVH"];
 const LOAD_STEPS = ["Analizando fotos con IA","Buscando comparables en el mercado","Validando precios de la zona","Calculando valor de mercado","Generando informe de tasación"];
 
@@ -968,8 +968,9 @@ export default function TasaLibre() {
         dolarBlue = dolarData.venta || dolarData.compra || 0;
       } catch(e) { console.warn("No se pudo obtener cotización dólar:", e.message); }
 
-      // Geocodificar UNA SOLA VEZ antes del loop
-      try {
+      // Geocodificar UNA SOLA VEZ antes del loop (NO en barrio cerrado: las calles cercanas inducen comparables externos)
+      const esCerradoSearch = casaSubtipo === "cerrado" || deptoSubtipo === "cerrado" || loteSubtipo === "cerrado";
+      if (!esCerradoSearch) try {
         const geoRes = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=ar`,
           { headers: { "User-Agent": "TasaLibre/1.0" } }
@@ -1017,7 +1018,12 @@ export default function TasaLibre() {
 
       // Las 3 búsquedas EN PARALELO — ahorra 60-90 segundos
       const searchPromises = queries.map(q => {
-        const searchPrompt = streetContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + " Para el campo fuente usa siempre: Relevamiento de mercado.";
+        const nombreBarrioCerrado = casaNombreBarrio || nombreBarrioPrivado || "";
+        const bcContext = esCerradoSearch && nombreBarrioCerrado
+          ? "CRITICO BARRIO CERRADO: buscar UNICAMENTE propiedades DENTRO del barrio cerrado \"" + nombreBarrioCerrado + "\". Si un resultado no menciona explicitamente el nombre \"" + nombreBarrioCerrado + "\", DESCARTARLO aunque este cerca geograficamente. Los valores dentro del barrio son muy distintos a los de afuera. "
+          : "";
+        const formatoEstricto = " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos así: [direccion] - [" + precioLabel + "] - [m2]m2. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo.";
+        const searchPrompt = bcContext + streetContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + formatoEstricto + " Para el campo fuente usa siempre: Relevamiento de mercado.";
         return fetch("/api/tasar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1027,7 +1033,7 @@ export default function TasaLibre() {
             max_tokens: 400,
             tools: [{ type: "web_search_20250305", name: "web_search" }],
             messages: [{ role: "user", content: searchPrompt }],
-            _meta: { address, tipo, operacion, barrio, supTotal, conCochera: amenities.includes("Cochera") }
+            _meta: { address: esCerradoSearch ? "" : address, tipo, operacion, barrio, supTotal, conCochera: amenities.includes("Cochera") }
           })
         })
         .then(r => r.text())
@@ -1042,9 +1048,29 @@ export default function TasaLibre() {
       setLoadStep(3);
       const searchResults = await Promise.all(searchPromises);
       const searchErrors = [];
+      const nombreBarrioFiltro = (casaNombreBarrio || nombreBarrioPrivado || "").toLowerCase().trim();
+
       for (const res of searchResults) {
-        if (res.error) searchErrors.push(res.error);
-        else if (res.text && res.text.trim()) comparablesData += " | " + res.text.slice(0, 400);
+        if (res.error) { searchErrors.push(res.error); continue; }
+        if (!res.text || !res.text.trim()) continue;
+
+        if (esCerradoSearch && nombreBarrioFiltro) {
+          // FILTRO PROGRAMÁTICO: descartar líneas/fragmentos que NO mencionen el barrio.
+          // No confiamos solo en la instrucción a la IA — el web_search interno puede
+          // ampliar la búsqueda por su cuenta e ignorar el site:/comillas.
+          // Split robusto: saltos de línea, numeración (1. 2.), viñetas (- •) o "USD"/precio como separador de items
+          const partes = res.text
+            .split(/\n+|(?=\d+[\.\)]\s)|(?=[•\-]\s)/)
+            .map(s => s.trim())
+            .filter(s => s.length > 10)
+            .filter(linea => linea.toLowerCase().includes(nombreBarrioFiltro));
+          if (partes.length > 0) {
+            comparablesData += " | " + partes.join(" | ").slice(0, 600);
+          }
+          // Si NINGUNA línea menciona el barrio, se descarta todo el bloque (no se agrega nada)
+        } else {
+          comparablesData += " | " + res.text.slice(0, 400);
+        }
       }
       // Si las 3 búsquedas fallaron, es un error técnico real — no seguir
       if (searchErrors.length === queries.length && !comparablesData.trim()) {
@@ -1078,14 +1104,19 @@ export default function TasaLibre() {
         loteAdicionales.length ? "adicionales:"+loteAdicionales.join(",") : "",
       ].filter(Boolean).join(" | ");
 
+      const sinComparablesBarrioCerrado = esCerradoSearch && nombreBarrioFiltro && !comparablesData.trim();
       const comparablesCtx = comparablesData
         ? "COMPARABLES(usa como base):" + comparablesData.slice(0, 800)
-        : "Sin comparables online.";
+        : (sinComparablesBarrioCerrado
+            ? "ADVERTENCIA: no se encontraron comparables VERIFICADOS dentro del barrio cerrado " + nombreBarrioFiltro + " en esta busqueda. NO inventes precios de memoria. Usa tu conocimiento real del segmento (barrios cerrados de categoria similar en la misma zona) solo como referencia aproximada, ampliando el rango +-15%, y aclaralo en el analisis."
+            : "Sin comparables online.");
 
       const prompt = "Sos tasador inmobiliario Argentina. CONSERVADOR y PRECISO.\n" +
         "PROPIEDAD: " + propData + "\n" +
         comparablesCtx + "\n" +
-        "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n" +
+        (esCerradoSearch && (casaNombreBarrio||nombreBarrioPrivado)
+          ? "REGLAS BARRIO CERRADO: 1)Usar SOLO comparables cuyo texto ORIGINAL mencione explicitamente \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\". 2)PROHIBIDO usar propiedades fuera del perimetro aunque esten geograficamente cerca o en la misma localidad/partido: el m2 dentro del barrio cerrado vale 2-4 veces mas que afuera. 3)Antes de incluir un comparable en el JSON final, releelo: si NO tiene el nombre del barrio en el texto que lo describe, NO LO INCLUYAS, aunque parezca de la misma zona. 4)Si hay pocos comparables validos del barrio, usar tu conocimiento de barrios cerrados de categoria EQUIVALENTE (mismo perfil, misma zona geografica amplia), NUNCA barrio abierto ni la localidad general. 5)Promedio m2 de comparables validos=base. 6)Rango+-5%. 7)CONSERVADOR.\n"
+          : "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n") +
         "OPERACION: " + (operacion === "alquiler" ? "ALQUILER - calcular valor de alquiler mensual en DOLARES AMERICANOS." + (dolarBlue > 0 ? " Tipo de cambio dolar blue: $" + dolarBlue.toLocaleString("es-AR") + ". Si encontras comparables en pesos, convertirlos a dolares con ese tipo de cambio antes de calcular el promedio." : "") + " Los comparables son precios de alquiler, NO de venta." : "VENTA - calcular valor de venta en DOLARES AMERICANOS.") + "\n" +
         "MODELO DE VALUACION:\n" +
         "PASO 1 - BASE: usar precio/m2 promedio de los comparables encontrados. Ese promedio YA refleja el mercado real de la zona incluyendo propiedades en distintos estados.\n" +
@@ -1098,6 +1129,7 @@ export default function TasaLibre() {
         "REGLA 2 - COCHERA ES FILTRO NO AJUSTE: comparables ya filtrados por cochera. No aplicar porcentaje por cochera.\n" +
         "REGLA 3 - ORIENTACION INFORMATIVA: mencionar orientacion en el analisis pero aplicar 0% de ajuste. No sube ni baja el precio.\n" +
         "REGLA 4 - DEMOLICION: si hay riesgo de derrumbe, comparar con terrenos de la zona, no con propiedades.\n" +
+        "REGLA 5 - LOTE A LAGUNA (EXCEPCION AL TECHO): si la propiedad tiene la caracteristica 'Lote a laguna', aplicar SIEMPRE +10% adicional sobre el valor final YA CALCULADO (despues de aplicar el resto de ajustes y el techo +15%/-20%). Este +10% es OBLIGATORIO, se suma DESPUES del techo, y por lo tanto el techo NO aplica a este ajuste especifico. Ejemplo: si el valor con techo aplicado da USD 500.000, con lote a laguna el valor final es USD 550.000.\n" +
         "\n" +
         "AJUSTES ESTRUCTURALES (caracteristicas fijas, aplicar siempre):\n" +
         "DISPOSICION: frente 0% / lateral -5% / contrafrente -10% / interno -12%.\n" +
