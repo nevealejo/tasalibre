@@ -43,15 +43,30 @@ export default async function handler(req, res) {
         created_at: new Date().toISOString()
       })
     });
-    // Notificación WhatsApp al admin (CallMeBot)
-    if (r.ok && process.env.CALLMEBOT_APIKEY) {
-      try {
-        const msg = `🏠 Nuevo lead TasaLibre!\n${nombre || "Sin nombre"} - ${whatsapp || "sin tel"}\n${tipo} en ${operacion} - ${address || ""}\nValor: USD ${valorUsd ? Number(valorUsd).toLocaleString("es-AR") : "?"}`;
-        await fetch(`https://api.callmebot.com/whatsapp.php?phone=5491140356742&text=${encodeURIComponent(msg)}&apikey=${process.env.CALLMEBOT_APIKEY}`);
-      } catch(e) { console.warn("WhatsApp notify failed:", e.message); }
+
+    // Notificación WhatsApp al admin (CallMeBot) — con logging real para diagnóstico
+    let waStatus = "no_intentado";
+    if (r.ok) {
+      if (!process.env.CALLMEBOT_APIKEY) {
+        waStatus = "sin_apikey_configurada";
+        console.warn("CALLMEBOT_APIKEY no está configurada en Vercel");
+      } else {
+        try {
+          const msg = `🏠 Nuevo lead TasaLibre!\n${nombre || "Sin nombre"} - ${whatsapp || "sin tel"}\n${tipo} en ${operacion} - ${address || ""}\nValor: USD ${valorUsd ? Number(valorUsd).toLocaleString("es-AR") : "?"}`;
+          const notifyPhone = process.env.CALLMEBOT_PHONE || "5491140356742";
+          const waUrl = `https://api.callmebot.com/whatsapp.php?phone=${notifyPhone}&text=${encodeURIComponent(msg)}&apikey=${process.env.CALLMEBOT_APIKEY}`;
+          const waRes = await fetch(waUrl);
+          const waText = await waRes.text();
+          waStatus = `status_${waRes.status}: ${waText.slice(0, 200)}`;
+          console.log("CallMeBot response:", waStatus);
+        } catch(e) {
+          waStatus = "error: " + e.message;
+          console.warn("WhatsApp notify failed:", e.message);
+        }
+      }
     }
 
-    return res.status(r.ok ? 200 : r.status).json({ ok: r.ok });
+    return res.status(r.ok ? 200 : r.status).json({ ok: r.ok, waStatus });
   }
 
   if (req.method === "PATCH") {
