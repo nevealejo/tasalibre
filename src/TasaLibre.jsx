@@ -1024,7 +1024,7 @@ export default function TasaLibre() {
           signal: controller.signal,
           body: JSON.stringify({
             model: "claude-haiku-4-5-20251001",
-            max_tokens: 400,
+            max_tokens: 700,
             tools: [{ type: "web_search_20250305", name: "web_search" }],
             messages: [{ role: "user", content: searchPrompt }],
             _meta: { address, tipo, operacion, barrio, supTotal, conCochera: amenities.includes("Cochera") }
@@ -1033,15 +1033,22 @@ export default function TasaLibre() {
         .then(r => r.text())
         .then(t => {
           const data = JSON.parse(t);
-          return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+          if (data.error) return { error: data.error.message || "Error en búsqueda" };
+          return { text: (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n") };
         })
-        .catch(e => { console.warn("Search failed:", e.message); return ""; });
+        .catch(e => { console.warn("Search failed:", e.message); return { error: e.message }; });
       });
 
       setLoadStep(3);
       const searchResults = await Promise.all(searchPromises);
-      for (const textBlocks of searchResults) {
-        if (textBlocks.trim()) comparablesData += " | " + textBlocks.slice(0, 400);
+      const searchErrors = [];
+      for (const res of searchResults) {
+        if (res.error) searchErrors.push(res.error);
+        else if (res.text && res.text.trim()) comparablesData += " | " + res.text.slice(0, 1200);
+      }
+      // Si las 3 búsquedas fallaron, es un error técnico real — no seguir
+      if (searchErrors.length === queries.length && !comparablesData.trim()) {
+        throw new Error("Error en búsqueda de comparables: " + searchErrors[0]);
       }
 
       setLoadStep(4);
@@ -1072,7 +1079,7 @@ export default function TasaLibre() {
       ].filter(Boolean).join(" | ");
 
       const comparablesCtx = comparablesData
-        ? "COMPARABLES(usa como base):" + comparablesData.slice(0, 800)
+        ? "COMPARABLES(usa como base):" + comparablesData.slice(0, 3600)
         : "Sin comparables online.";
 
       const prompt = "Sos tasador inmobiliario Argentina. CONSERVADOR y PRECISO.\n" +
@@ -1083,7 +1090,7 @@ export default function TasaLibre() {
         "REGLAS DE DATOS (CRITICAS):\n" +
         "1. NUNCA inventar precios. Solo usar precios que aparecen EXPLICITAMENTE en los resultados de busqueda. Si un comparable no tiene precio visible, DESCARTARLO.\n" +
         "2. OUTLIERS: antes de promediar, descartar comparables cuyo precio/m2 se desvie mas de 40% de la mediana del grupo. Son errores de carga o propiedades atipicas.\n" +
-        "3. DATOS INSUFICIENTES: si hay menos de 3 comparables validos con precio real, responder con valor_usd:0 y en analisis explicar: No encontramos suficientes datos de mercado para esta zona. Recomendamos contactar a un asesor para una tasacion personalizada.\n" +
+        "3. DATOS INSUFICIENTES: con 2 o mas comparables validos tasar normalmente. Con 1 solo comparable, tasar igual usando ese dato mas tu conocimiento del mercado zonal, ampliando el rango a +-15% y aclarando menor precision en el analisis. SOLO con CERO comparables con precio real, responder valor_usd:0 y explicar: No encontramos suficientes datos de mercado para esta zona.\n" +
         "MODELO DE VALUACION:\n" +
         "PASO 1 - BASE: usar precio/m2 promedio de los comparables encontrados. Ese promedio YA refleja el mercado real de la zona incluyendo propiedades en distintos estados.\n" +
         "PASO 2 - ANCLA: identificar el comparable mas similar en superficie y tipologia y usarlo como referencia principal.\n" +
@@ -1162,7 +1169,8 @@ export default function TasaLibre() {
         const fixed = jsonStr.replace(/,\s*([}\]])/g,"$1").replace(/'/g,'"');
         try { parsed = JSON.parse(fixed); } catch(e2) { throw new Error("JSON invalido: " + e.message + " | " + jsonStr.slice(0,200)); }
       }
-      if (!parsed.valor_usd) throw new Error("Sin valor_usd. Keys: " + Object.keys(parsed).join(", "));
+      if (parsed.valor_usd === undefined || parsed.valor_usd === null) throw new Error("Respuesta invalida de la IA. Keys: " + Object.keys(parsed).join(", "));
+      // valor_usd === 0 es válido: significa "sin datos suficientes para esta zona"
 
       if (!skipContact && nombre.trim()) {
         const htmlInforme = generatePDF(parsed, address, photos, true);
