@@ -886,7 +886,7 @@ export default function TasaLibre() {
 
         if (tipo === "lote" && loteSubtipo === "cerrado") {
           return [
-            `"${nombreBarrio}" lote ${op} ${monedaShort} site:roomix.ai OR site:properati.com.ar OR site:remax.com.ar`,
+            `"${nombreBarrio}" lote ${op} ${monedaShort} site:properati.com.ar OR site:remax.com.ar`,
             `"${nombreBarrio}" terreno ${op} ${monedaShort} argencasas OR remax precio`,
             `"${nombreBarrio}" barrio cerrado lote terreno ${op} ${monedaShort} m2`,
           ];
@@ -901,7 +901,7 @@ export default function TasaLibre() {
         if (tipo === "departamento" && deptoSubtipo === "cerrado") {
           const cocheraFilter = (amenities.includes("Cochera") || amenities.includes("Cochera doble")) ? "con cochera " : "";
           return [
-            `"${nombreCompleto}" departamento ${op} ${monedaShort} ${dormRef}${cocheraFilter}site:roomix.ai OR site:properati.com.ar OR site:remax.com.ar`,
+            `"${nombreCompleto}" departamento ${op} ${monedaShort} ${dormRef}${cocheraFilter}site:properati.com.ar OR site:remax.com.ar`,
             `"${nombreCompleto}" depto ${op} ${monedaShort} ${supRef}${cocheraFilter}argencasas OR remax`,
             `"${nombreBarrio}" barrio cerrado departamento ${op} ${monedaShort} ${ambientes} ambientes`,
           ];
@@ -916,7 +916,7 @@ export default function TasaLibre() {
         }
         if (tipo === "casa" && casaSubtipo === "cerrado") {
           return [
-            `"${nombreCompleto}" casa ${op} ${monedaShort} site:roomix.ai OR site:properati.com.ar OR site:remax.com.ar`,
+            `"${nombreCompleto}" casa ${op} ${monedaShort} site:properati.com.ar OR site:remax.com.ar`,
             `"${nombreCompleto}" casa ${op} ${monedaShort} precio m2 argencasas OR remax`,
             `"${nombreBarrio}" barrio cerrado casa ${op} ${monedaShort} ${dormRef}${supRef}`,
           ];
@@ -930,7 +930,7 @@ export default function TasaLibre() {
         }
         if (tipo === "ph" && deptoSubtipo === "cerrado") {
           return [
-            `"${nombreCompleto}" PH ${op} ${monedaShort} site:roomix.ai OR site:properati.com.ar OR site:remax.com.ar`,
+            `"${nombreCompleto}" PH ${op} ${monedaShort} site:properati.com.ar OR site:remax.com.ar`,
             `"${nombreCompleto}" ph ${op} ${monedaShort} argencasas OR remax`,
             `"${nombreBarrio}" barrio cerrado ph ${op} ${monedaShort}`,
           ];
@@ -1017,14 +1017,14 @@ export default function TasaLibre() {
 
       // Las 3 búsquedas EN PARALELO — ahorra 60-90 segundos
       const searchPromises = queries.map(q => {
-        const searchPrompt = streetContext + "Busca en roomix.ai y otros portales inmobiliarios. Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + " Para el campo fuente usa siempre: Relevamiento de mercado.";
+        const searchPrompt = streetContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + " Para el campo fuente usa siempre: Relevamiento de mercado.";
         return fetch("/api/tasar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 700,
+            model: "claude-sonnet-4-6",
+            max_tokens: 400,
             tools: [{ type: "web_search_20250305", name: "web_search" }],
             messages: [{ role: "user", content: searchPrompt }],
             _meta: { address, tipo, operacion, barrio, supTotal, conCochera: amenities.includes("Cochera") }
@@ -1044,7 +1044,7 @@ export default function TasaLibre() {
       const searchErrors = [];
       for (const res of searchResults) {
         if (res.error) searchErrors.push(res.error);
-        else if (res.text && res.text.trim()) comparablesData += " | " + res.text.slice(0, 1200);
+        else if (res.text && res.text.trim()) comparablesData += " | " + res.text.slice(0, 400);
       }
       // Si las 3 búsquedas fallaron, es un error técnico real — no seguir
       if (searchErrors.length === queries.length && !comparablesData.trim()) {
@@ -1079,7 +1079,7 @@ export default function TasaLibre() {
       ].filter(Boolean).join(" | ");
 
       const comparablesCtx = comparablesData
-        ? "COMPARABLES(usa como base):" + comparablesData.slice(0, 3600)
+        ? "COMPARABLES(usa como base):" + comparablesData.slice(0, 800)
         : "Sin comparables online.";
 
       const prompt = "Sos tasador inmobiliario Argentina. CONSERVADOR y PRECISO.\n" +
@@ -1087,10 +1087,6 @@ export default function TasaLibre() {
         comparablesCtx + "\n" +
         "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n" +
         "OPERACION: " + (operacion === "alquiler" ? "ALQUILER - calcular valor de alquiler mensual en DOLARES AMERICANOS." + (dolarBlue > 0 ? " Tipo de cambio dolar blue: $" + dolarBlue.toLocaleString("es-AR") + ". Si encontras comparables en pesos, convertirlos a dolares con ese tipo de cambio antes de calcular el promedio." : "") + " Los comparables son precios de alquiler, NO de venta." : "VENTA - calcular valor de venta en DOLARES AMERICANOS.") + "\n" +
-        "REGLAS DE DATOS (CRITICAS):\n" +
-        "1. NUNCA inventar precios. Solo usar precios que aparecen EXPLICITAMENTE en los resultados de busqueda. Si un comparable no tiene precio visible, DESCARTARLO.\n" +
-        "2. OUTLIERS: antes de promediar, descartar comparables cuyo precio/m2 se desvie mas de 40% de la mediana del grupo. Son errores de carga o propiedades atipicas.\n" +
-        "3. DATOS INSUFICIENTES: con 2 o mas comparables validos tasar normalmente. Con 1 solo comparable, tasar igual usando ese dato mas tu conocimiento del mercado zonal, ampliando el rango a +-15% y aclarando menor precision en el analisis. SOLO con CERO comparables con precio real, responder valor_usd:0 y explicar: No encontramos suficientes datos de mercado para esta zona.\n" +
         "MODELO DE VALUACION:\n" +
         "PASO 1 - BASE: usar precio/m2 promedio de los comparables encontrados. Ese promedio YA refleja el mercado real de la zona incluyendo propiedades en distintos estados.\n" +
         "PASO 2 - ANCLA: identificar el comparable mas similar en superficie y tipologia y usarlo como referencia principal.\n" +
