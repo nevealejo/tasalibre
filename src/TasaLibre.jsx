@@ -1022,7 +1022,8 @@ export default function TasaLibre() {
         const bcContext = esCerradoSearch && nombreBarrioCerrado
           ? "CRITICO BARRIO CERRADO: buscar UNICAMENTE propiedades DENTRO del barrio cerrado \"" + nombreBarrioCerrado + "\". Si un resultado no menciona explicitamente el nombre \"" + nombreBarrioCerrado + "\", DESCARTARLO aunque este cerca geograficamente. Los valores dentro del barrio son muy distintos a los de afuera. "
           : "";
-        const formatoEstricto = " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos así: [direccion] - [" + precioLabel + "] - [m2]m2. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo.";
+        const m2Label = tipo === "casa" ? "m2 CUBIERTOS/construidos (NO el lote/terreno total)" : "m2";
+        const formatoEstricto = " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos así: [direccion] - [" + precioLabel + "] - [" + m2Label + "]. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo." + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "");
         const searchPrompt = bcContext + streetContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + formatoEstricto + " Para el campo fuente usa siempre: Relevamiento de mercado.";
         return fetch("/api/tasar", {
           method: "POST",
@@ -1119,7 +1120,7 @@ export default function TasaLibre() {
           : "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n") +
         "OPERACION: " + (operacion === "alquiler" ? "ALQUILER - calcular valor de alquiler mensual en DOLARES AMERICANOS." + (dolarBlue > 0 ? " Tipo de cambio dolar blue: $" + dolarBlue.toLocaleString("es-AR") + ". Si encontras comparables en pesos, convertirlos a dolares con ese tipo de cambio antes de calcular el promedio." : "") + " Los comparables son precios de alquiler, NO de venta." : "VENTA - calcular valor de venta en DOLARES AMERICANOS.") + "\n" +
         "MODELO DE VALUACION:\n" +
-        "PASO 1 - BASE: usar precio/m2 promedio de los comparables encontrados. Ese promedio YA refleja el mercado real de la zona incluyendo propiedades en distintos estados.\n" +
+        "PASO 1 - BASE: usar precio/m2 promedio de los comparables encontrados, calculado SIEMPRE sobre m2 CUBIERTOS/construidos, NUNCA sobre m2 de lote/terreno total (especialmente en casas, donde el lote suele ser 2-3 veces mas grande que lo cubierto). Ese promedio YA refleja el mercado real de la zona incluyendo propiedades en distintos estados.\n" +
         "PASO 2 - ANCLA: identificar el comparable mas similar en superficie y tipologia y usarlo como referencia principal.\n" +
         "PASO 3 - AJUSTES: aplicar SOLO diferencias respecto al promedio zonal. Si los comparables ya incluyen propiedades deterioradas, el ajuste por estado es minimo o cero.\n" +
         "PASO 4 - TECHO DURO: ajuste total maximo +15% / minimo -20%. IRROMPIBLE. Recortar si se supera.\n" +
