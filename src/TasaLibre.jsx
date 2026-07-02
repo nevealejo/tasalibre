@@ -860,7 +860,7 @@ export default function TasaLibre() {
     window.scrollTo(0, 0);
 
     const controller = new AbortController();
-    const globalTimeout = setTimeout(() => controller.abort(), 120000);
+    const globalTimeout = setTimeout(() => controller.abort(), 280000);
 
     const esBarrioCerrado = (tipo==="casa" && casaSubtipo==="cerrado") || ((tipo==="departamento"||tipo==="ph") && deptoSubtipo==="cerrado");
     const address = esBarrioCerrado
@@ -1011,29 +1011,37 @@ export default function TasaLibre() {
         }
       } catch(e) { console.warn("Geocoding failed:", e.message); }
 
-      for (let qi = 0; qi < queries.length; qi++) {
-        setLoadStep(Math.min(qi + 2, 4));
-        const precioLabel = operacion === "alquiler" ? "precio alquiler mensual (en dolares o pesos)" : "precio venta en dolares";
-        const dolarContext = operacion === "alquiler" && dolarBlue > 0 ? " Tipo de cambio dolar blue hoy: $" + dolarBlue.toLocaleString("es-AR") + ". Si el precio está en pesos convertirlo a dolares usando ese tipo de cambio." : "";
-        const searchPrompt = streetContext + "Busca en roomix.ai y otros portales inmobiliarios. Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + queries[qi] + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + " Para el campo fuente usa siempre: Relevamiento de mercado.";
-        try {
-          const searchRes = await fetch("/api/tasar", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: controller.signal,
-            body: JSON.stringify({
-              model: "claude-sonnet-4-6",
-              max_tokens: 400,
-              tools: [{ type: "web_search_20250305", name: "web_search" }],
-              messages: [{ role: "user", content: searchPrompt }],
-              _meta: { address, tipo, operacion, barrio, supTotal, conCochera: amenities.includes("Cochera") }
-            })
-          });
-          const searchText = await searchRes.text();
-          const searchData = JSON.parse(searchText);
-          const textBlocks = (searchData.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-          if (textBlocks.trim()) comparablesData += " | " + textBlocks.slice(0, 400);
-        } catch(searchErr) { console.warn("Search failed:", searchErr.message); }
+      setLoadStep(2);
+      const precioLabel = operacion === "alquiler" ? "precio alquiler mensual (en dolares o pesos)" : "precio venta en dolares";
+      const dolarContext = operacion === "alquiler" && dolarBlue > 0 ? " Tipo de cambio dolar blue hoy: $" + dolarBlue.toLocaleString("es-AR") + ". Si el precio está en pesos convertirlo a dolares usando ese tipo de cambio." : "";
+
+      // Las 3 búsquedas EN PARALELO — ahorra 60-90 segundos
+      const searchPromises = queries.map(q => {
+        const searchPrompt = streetContext + "Busca en roomix.ai y otros portales inmobiliarios. Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + " Para el campo fuente usa siempre: Relevamiento de mercado.";
+        return fetch("/api/tasar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 400,
+            tools: [{ type: "web_search_20250305", name: "web_search" }],
+            messages: [{ role: "user", content: searchPrompt }],
+            _meta: { address, tipo, operacion, barrio, supTotal, conCochera: amenities.includes("Cochera") }
+          })
+        })
+        .then(r => r.text())
+        .then(t => {
+          const data = JSON.parse(t);
+          return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+        })
+        .catch(e => { console.warn("Search failed:", e.message); return ""; });
+      });
+
+      setLoadStep(3);
+      const searchResults = await Promise.all(searchPromises);
+      for (const textBlocks of searchResults) {
+        if (textBlocks.trim()) comparablesData += " | " + textBlocks.slice(0, 400);
       }
 
       setLoadStep(4);
