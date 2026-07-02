@@ -139,7 +139,8 @@ const styles = `
   .hero-stat:last-child { border-right: none; }
   .stat-num { display: block; font-size: 22px; font-weight: 800; color: var(--azul); letter-spacing: -0.5px; }
   .stat-label { display: block; font-size: 10px; color: var(--ink-4); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.06em; }
-  .site-footer { background: #0F2FA8; color: rgba(255,255,255,0.85); padding: 48px 32px 24px; }
+  .footer-fade { height: 28px; background: var(--bg); }
+  .site-footer { background: #1B4FD8; color: rgba(255,255,255,0.85); padding: 24px 32px 16px; box-shadow: 0 -8px 28px rgba(15,25,35,.14), 0 -2px 8px rgba(15,25,35,.08); position: relative; }
   .footer-main { display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; max-width: 680px; margin: 0 auto; flex-wrap: wrap; }
   .footer-brand { display: flex; flex-direction: column; gap: 10px; }
   .footer-tagline { font-size: 13px; color: rgba(255,255,255,0.65); line-height: 1.4; }
@@ -147,7 +148,7 @@ const styles = `
   .footer-social { display: flex; align-items: center; gap: 20px; }
   .footer-social a { color: rgba(255,255,255,0.75); text-decoration: none; display: flex; align-items: center; gap: 7px; font-size: 13px; transition: color 0.2s; }
   .footer-social a:hover { color: white; }
-  .footer-divider { border: none; border-top: 1px solid rgba(255,255,255,0.1); max-width: 680px; margin: 28px auto 16px; }
+  .footer-divider { border: none; border-top: 1px solid rgba(255,255,255,0.1); max-width: 680px; margin: 18px auto 12px; }
   .footer-legal { text-align: center; font-size: 11px; color: rgba(255,255,255,0.35); max-width: 680px; margin: 0 auto; }
   .stat-num {
     font-family: 'Fraunces', serif;
@@ -474,6 +475,7 @@ export default function TasaLibre() {
   const [casaSubtipo, setCasaSubtipo] = useState(""); // "tradicional" | "cerrado"
   const [deptoSubtipo, setDeptoSubtipo] = useState(""); // "tradicional" | "cerrado"
   const [sectorBarrio, setSectorBarrio] = useState(""); // sub-barrio / sector
+  const [addrWarning, setAddrWarning] = useState(false); // dirección no verificada
   const [casaNombreBarrio, setCasaNombreBarrio] = useState("");
 
   // Departamento extras
@@ -884,7 +886,7 @@ export default function TasaLibre() {
 
         if (tipo === "lote" && loteSubtipo === "cerrado") {
           return [
-            `"${nombreBarrio}" lote ${op} ${monedaShort} site:properati.com.ar OR site:remax.com.ar`,
+            `"${nombreBarrio}" lote ${op} ${monedaShort} site:roomix.ai OR site:properati.com.ar OR site:remax.com.ar`,
             `"${nombreBarrio}" terreno ${op} ${monedaShort} argencasas OR remax precio`,
             `"${nombreBarrio}" barrio cerrado lote terreno ${op} ${monedaShort} m2`,
           ];
@@ -899,7 +901,7 @@ export default function TasaLibre() {
         if (tipo === "departamento" && deptoSubtipo === "cerrado") {
           const cocheraFilter = (amenities.includes("Cochera") || amenities.includes("Cochera doble")) ? "con cochera " : "";
           return [
-            `"${nombreCompleto}" departamento ${op} ${monedaShort} ${dormRef}${cocheraFilter}site:properati.com.ar OR site:remax.com.ar`,
+            `"${nombreCompleto}" departamento ${op} ${monedaShort} ${dormRef}${cocheraFilter}site:roomix.ai OR site:properati.com.ar OR site:remax.com.ar`,
             `"${nombreCompleto}" depto ${op} ${monedaShort} ${supRef}${cocheraFilter}argencasas OR remax`,
             `"${nombreBarrio}" barrio cerrado departamento ${op} ${monedaShort} ${ambientes} ambientes`,
           ];
@@ -914,7 +916,7 @@ export default function TasaLibre() {
         }
         if (tipo === "casa" && casaSubtipo === "cerrado") {
           return [
-            `"${nombreCompleto}" casa ${op} ${monedaShort} site:properati.com.ar OR site:remax.com.ar`,
+            `"${nombreCompleto}" casa ${op} ${monedaShort} site:roomix.ai OR site:properati.com.ar OR site:remax.com.ar`,
             `"${nombreCompleto}" casa ${op} ${monedaShort} precio m2 argencasas OR remax`,
             `"${nombreBarrio}" barrio cerrado casa ${op} ${monedaShort} ${dormRef}${supRef}`,
           ];
@@ -928,7 +930,7 @@ export default function TasaLibre() {
         }
         if (tipo === "ph" && deptoSubtipo === "cerrado") {
           return [
-            `"${nombreCompleto}" PH ${op} ${monedaShort} site:properati.com.ar OR site:remax.com.ar`,
+            `"${nombreCompleto}" PH ${op} ${monedaShort} site:roomix.ai OR site:properati.com.ar OR site:remax.com.ar`,
             `"${nombreCompleto}" ph ${op} ${monedaShort} argencasas OR remax`,
             `"${nombreBarrio}" barrio cerrado ph ${op} ${monedaShort}`,
           ];
@@ -1013,7 +1015,7 @@ export default function TasaLibre() {
         setLoadStep(Math.min(qi + 2, 4));
         const precioLabel = operacion === "alquiler" ? "precio alquiler mensual (en dolares o pesos)" : "precio venta en dolares";
         const dolarContext = operacion === "alquiler" && dolarBlue > 0 ? " Tipo de cambio dolar blue hoy: $" + dolarBlue.toLocaleString("es-AR") + ". Si el precio está en pesos convertirlo a dolares usando ese tipo de cambio." : "";
-        const searchPrompt = streetContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + queries[qi] + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + " Para el campo fuente usa siempre: Relevamiento de mercado.";
+        const searchPrompt = streetContext + "Busca en roomix.ai y otros portales inmobiliarios. Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + queries[qi] + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + " Para el campo fuente usa siempre: Relevamiento de mercado.";
         try {
           const searchRes = await fetch("/api/tasar", {
             method: "POST",
@@ -1070,6 +1072,10 @@ export default function TasaLibre() {
         comparablesCtx + "\n" +
         "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n" +
         "OPERACION: " + (operacion === "alquiler" ? "ALQUILER - calcular valor de alquiler mensual en DOLARES AMERICANOS." + (dolarBlue > 0 ? " Tipo de cambio dolar blue: $" + dolarBlue.toLocaleString("es-AR") + ". Si encontras comparables en pesos, convertirlos a dolares con ese tipo de cambio antes de calcular el promedio." : "") + " Los comparables son precios de alquiler, NO de venta." : "VENTA - calcular valor de venta en DOLARES AMERICANOS.") + "\n" +
+        "REGLAS DE DATOS (CRITICAS):\n" +
+        "1. NUNCA inventar precios. Solo usar precios que aparecen EXPLICITAMENTE en los resultados de busqueda. Si un comparable no tiene precio visible, DESCARTARLO.\n" +
+        "2. OUTLIERS: antes de promediar, descartar comparables cuyo precio/m2 se desvie mas de 40% de la mediana del grupo. Son errores de carga o propiedades atipicas.\n" +
+        "3. DATOS INSUFICIENTES: si hay menos de 3 comparables validos con precio real, responder con valor_usd:0 y en analisis explicar: No encontramos suficientes datos de mercado para esta zona. Recomendamos contactar a un asesor para una tasacion personalizada.\n" +
         "MODELO DE VALUACION:\n" +
         "PASO 1 - BASE: usar precio/m2 promedio de los comparables encontrados. Ese promedio YA refleja el mercado real de la zona incluyendo propiedades en distintos estados.\n" +
         "PASO 2 - ANCLA: identificar el comparable mas similar en superficie y tipologia y usarlo como referencia principal.\n" +
@@ -1265,13 +1271,13 @@ export default function TasaLibre() {
         )}
 
         {screen==="hero" && (
+          <>
+          <div className="footer-fade"></div>
           <footer className="site-footer">
             <div className="footer-main">
               <div className="footer-brand" style={{display:"flex",flexDirection:"column",gap:6}}>
                 <div style={{display:"flex",flexDirection:"row",alignItems:"center",gap:16}}>
-                  <div style={{fontSize:26,fontWeight:800,color:"white",letterSpacing:"-0.5px",fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1,flexShrink:0}}>
-                    <span style={{fontWeight:800}}>Tasa </span><span style={{fontWeight:300,opacity:0.85}}>Libre</span>
-                  </div>
+                  <img src={LOGO_SRC} alt="TasaLibre" style={{height:72,width:"auto",display:"block",filter:"brightness(0) invert(1)",flexShrink:0}}/>
                   <div className="footer-tagline" style={{margin:0}}>Tasaciones inmobiliarias inteligentes</div>
                 </div>
                 <div className="footer-location">
@@ -1301,6 +1307,7 @@ export default function TasaLibre() {
               © 2025 TasaLibre · Tasación orientativa, no reemplaza una valuación oficial por martillero matriculado
             </div>
           </footer>
+          </>
         )}
 
         {screen==="wizard" && (
@@ -1506,6 +1513,14 @@ export default function TasaLibre() {
                     if(!barrio.trim()&&tipo!=="lote") { setErrBarrio(true); return; }
                     if(tipo==="lote"&&loteSubtipo&&!barrio.trim()) { setErrBarrio(true); return; }
                     setErrBarrio(false); setStep(2); window.scrollTo(0,0);
+                    // Verificar dirección en background (no bloquea)
+                    setAddrWarning(false);
+                    if (calle && numero && barrio) {
+                      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(calle+" "+numero+", "+barrio+", Argentina")}&format=json&limit=1`, {headers:{"User-Agent":"TasaLibre/1.0"}})
+                        .then(r=>r.json())
+                        .then(d=>{ if(!d.length) setAddrWarning(true); })
+                        .catch(()=>{});
+                    }
                   }}>Siguiente →</button>
                 </div>
               </div>
@@ -1514,6 +1529,11 @@ export default function TasaLibre() {
             {step===2 && (
 <div>
                 <h2 className="step-title">Contanos sobre<br/>el <em>inmueble</em></h2>
+                {addrWarning && (
+                  <div style={{background:"#FFF8E7",border:"1px solid #F59E0B",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#92400E"}}>
+                    ⚠️ No pudimos verificar la dirección ingresada. Revisá que esté bien escrita — podés <span style={{textDecoration:"underline",cursor:"pointer",fontWeight:600}} onClick={()=>{setStep(1);window.scrollTo(0,0);}}>volver y corregirla</span> o continuar igual.
+                  </div>
+                )}
                 <p className="step-desc">Estos datos ayudan a calcular el valor base y encontrar propiedades comparables.</p>
                 <div style={{display:"flex",alignItems:"center",gap:8,background:"var(--azul-light)",border:"1px solid var(--azul-mid)",borderRadius:8,padding:"10px 14px",marginBottom:8}}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--azul)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -1963,7 +1983,11 @@ export default function TasaLibre() {
           <div className="result">
             <div className="result-header">
               <div className="res-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Tasación completada</div>
-              <div className="res-price">{fmt(result.valor_usd)}{esAlquiler ? <span style={{fontSize:"0.45em",fontWeight:400,opacity:0.7}}>/mes</span> : ""}</div>
+              {result.valor_usd > 0 ? (
+                <div className="res-price">{fmt(result.valor_usd)}{esAlquiler ? <span style={{fontSize:"0.45em",fontWeight:400,opacity:0.7}}>/mes</span> : ""}</div>
+              ) : (
+                <div style={{fontSize:20,fontWeight:600,color:"white",padding:"12px 0",lineHeight:1.4}}>No encontramos suficientes datos de mercado para esta zona.<br/><span style={{fontSize:14,fontWeight:400,opacity:0.85}}>Hablá con un asesor para una tasación personalizada.</span></div>
+              )}
               <div className="res-range">Rango: {fmt(result.rango_min_usd)} – {fmt(result.rango_max_usd)}{esAlquiler ? " /mes" : ""} · {fmtM2(result.precio_m2_usd)}</div>
               <div className="res-addr">{result.address}</div>
             </div>
@@ -2047,7 +2071,10 @@ export default function TasaLibre() {
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
                 {(result.comparables||[]).map((c,i)=>(
                   <div key={i} className="comp-item" style={{paddingLeft:i%2===1?12:0,borderLeft:i%2===1?"1px solid var(--border)":"none"}}>
-                    <div><div className="comp-addr">{c.direccion}</div><div className="comp-detail">{c.barrio} · {c.m2} m² · {c.fuente}</div></div>
+                    <div style={{cursor:"pointer"}} onClick={()=>window.open("https://www.google.com/search?q="+encodeURIComponent((tipo||"propiedad")+" "+(operacion||"venta")+" "+c.direccion+" "+(c.barrio||"")),"_blank")} title="Ver en el mercado">
+                      <div className="comp-addr" style={{textDecoration:"underline",textDecorationColor:"rgba(27,79,216,0.3)",textUnderlineOffset:2}}>{c.direccion}</div>
+                      <div className="comp-detail">{c.barrio} · {c.m2} m² · {c.fuente}</div>
+                    </div>
                     <div><div className="comp-price">{fmt(c.precio_usd)}</div><div className="comp-sqm">USD {Math.round(c.precio_usd/c.m2)}/m²</div></div>
                   </div>
                 ))}
@@ -2078,6 +2105,9 @@ export default function TasaLibre() {
                 <button className="btn-outline" onClick={()=>generatePDF(result, result.address, photos)}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                   Descargar informe PDF
+                </button>
+                <button onClick={()=>{setScreen("wizard");setStep(1);window.scrollTo(0,0);}} style={{background:"transparent",border:"1.5px solid var(--border-2)",color:"var(--ink-3)",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",marginTop:8,width:"100%"}}>
+                  ✏️ Corregir datos y volver a tasar
                 </button>
               </div>
             </div>
@@ -2117,6 +2147,35 @@ export default function TasaLibre() {
               <div className="admin-stat"><span className="admin-stat-n">{Object.values(leadStatuses).filter(s=>s==="en_proceso").length}</span><span className="admin-stat-l">En proceso</span></div>
               <div className="admin-stat"><span className="admin-stat-n">{Object.values(leadStatuses).filter(s=>s==="cerrado").length}</span><span className="admin-stat-l">Cerrados</span></div>
             </div>
+
+            <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+              <input
+                value={adminSearch}
+                onChange={e=>setAdminSearch(e.target.value)}
+                placeholder="Buscar por nombre, dirección o WhatsApp..."
+                style={{flex:1,minWidth:200,padding:"10px 14px",borderRadius:10,border:"1px solid var(--border-2)",fontSize:13,background:"var(--white)"}}
+              />
+              <select value={adminFilter} onChange={e=>setAdminFilter(e.target.value)} style={{padding:"10px 14px",borderRadius:10,border:"1px solid var(--border-2)",fontSize:13,background:"var(--white)"}}>
+                <option value="todos">Todos los estados</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="contactado">Contactado</option>
+                <option value="en proceso">En proceso</option>
+                <option value="cerrado">Cerrado</option>
+                <option value="descartado">Descartado</option>
+              </select>
+              <button onClick={()=>{
+                const rows = leads.map(l=>[l.nombre,l.whatsapp,l.tipo,l.operacion,(l.direccion||l.address||""),l.superficie||"",l.valor_usd||l.valorUsd||"",l.status||"",l.fecha||l.created_at||""].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","));
+                const csv = "Nombre,WhatsApp,Tipo,Operacion,Direccion,Superficie,Valor USD,Estado,Fecha\n" + rows.join("\n");
+                const blob = new Blob([csv],{type:"text/csv;charset=utf-8;"});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = "leads_tasalibre.csv"; a.click();
+                setTimeout(()=>URL.revokeObjectURL(url),5000);
+              }} style={{padding:"10px 18px",borderRadius:10,border:"none",background:"var(--azul)",color:"white",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+                ⬇ Exportar CSV
+              </button>
+            </div>
+
             {leads.length===0 ? (
               <div className="empty-leads">
                 <div style={{fontSize:32,marginBottom:12}}>📭</div>
@@ -2127,7 +2186,15 @@ export default function TasaLibre() {
               <table className="leads-table">
                 <thead><tr><th>Contacto</th><th>Propiedad</th><th>Tasación</th><th>Fecha</th><th>Estado</th></tr></thead>
                 <tbody>
-                  {leads.map(l=>(
+                  {leads.filter(l=>{
+                    if(adminFilter!=="todos" && (l.status||"pendiente")!==adminFilter) return false;
+                    if(adminSearch.trim()){
+                      const q = adminSearch.toLowerCase();
+                      const searchable = [(l.nombre||""),(l.whatsapp||""),(l.direccion||l.address||""),(l.tipo||"")].join(" ").toLowerCase();
+                      if(!searchable.includes(q)) return false;
+                    }
+                    return true;
+                  }).map(l=>(
                     <tr key={l.id}>
                       <td>
                         <div className="lead-name">{l.nombre||<span style={{color:"var(--ink-4)",fontStyle:"italic"}}>Anónimo</span>}</div>
