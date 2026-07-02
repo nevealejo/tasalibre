@@ -335,7 +335,7 @@ const styles = `
   .score-bg { flex: 1; height: 6px; background: var(--bg); border-radius: 100px; }
   .score-fill { height: 100%; border-radius: 100px; background: linear-gradient(90deg, var(--azul), #4F7EF0); }
   .score-val { font-size: 12px; font-weight: 600; color: var(--azul); width: 36px; text-align: right; }
-  .comp-item { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .comp-item { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
   .comp-item:last-child { border-bottom: none; }
   .comp-addr { font-size: 13px; font-weight: 500; color: var(--ink); }
   .comp-detail { font-size: 11px; color: var(--ink-4); margin-top: 2px; }
@@ -2080,11 +2080,11 @@ export default function TasaLibre() {
 
             <div className="res-card-full" style={{marginBottom:16}}>
               <div className="card-title">Comparables de mercado</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
+              <div style={{display:"flex",flexDirection:"column",gap:0}}>
                 {(result.comparables||[]).map((c,i)=>(
-                  <div key={i} className="comp-item" style={{paddingLeft:i%2===1?12:0,borderLeft:i%2===1?"1px solid var(--border)":"none"}}>
-                    <div style={{cursor:"pointer"}} onClick={()=>window.open("https://www.google.com/search?q="+encodeURIComponent((tipo||"propiedad")+" "+(operacion||"venta")+" "+c.direccion+" "+(c.barrio||"")),"_blank")} title="Ver en el mercado">
-                      <div className="comp-addr" style={{textDecoration:"underline",textDecorationColor:"rgba(27,79,216,0.3)",textUnderlineOffset:2}}>{c.direccion}</div>
+                  <div key={i} className="comp-item">
+                    <div style={{minWidth:0}}>
+                      <div className="comp-addr">{c.direccion}</div>
                       <div className="comp-detail">{c.barrio} · {c.m2} m² · {c.fuente}</div>
                     </div>
                     <div><div className="comp-price">{fmt(c.precio_usd)}</div><div className="comp-sqm">USD {Math.round(c.precio_usd/c.m2)}/m²</div></div>
