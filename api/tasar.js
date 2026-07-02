@@ -1,4 +1,38 @@
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 300 };
+
+const SUPABASE_URL = "https://qhojftormgvcdncaaftx.supabase.co";
+
+// ── Rate limiting: máx 16 llamadas/día por IP (≈4 tasaciones) ─────────────
+async function checkRateLimit(ip) {
+  try {
+    const key = process.env.SUPABASE_SECRET_KEY;
+    if (!key || !ip) return true; // sin config, no bloquear
+    const hoy = new Date().toISOString().slice(0, 10);
+    const headers = { "Content-Type": "application/json", "apikey": key, "Authorization": `Bearer ${key}` };
+
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rate_limits?ip=eq.${encodeURIComponent(ip)}&fecha=eq.${hoy}&select=count`, { headers });
+    const rows = await r.json();
+
+    if (!rows.length) {
+      await fetch(`${SUPABASE_URL}/rest/v1/rate_limits`, {
+        method: "POST",
+        headers: { ...headers, "Prefer": "return=minimal" },
+        body: JSON.stringify({ ip, fecha: hoy, count: 1 })
+      });
+      return true;
+    }
+
+    const count = rows[0].count || 0;
+    if (count >= 16) return false; // 4 tasaciones × 4 llamadas
+
+    await fetch(`${SUPABASE_URL}/rest/v1/rate_limits?ip=eq.${encodeURIComponent(ip)}&fecha=eq.${hoy}`, {
+      method: "PATCH",
+      headers: { ...headers, "Prefer": "return=minimal" },
+      body: JSON.stringify({ count: count + 1 })
+    });
+    return true;
+  } catch { return true; } // ante error, no bloquear
+}
 
 async function geocodeAddress(address) {
   try {
@@ -134,6 +168,13 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: { message: "API key not configured" } });
+
+  // Rate limiting por IP — máx 16 llamadas/día (≈4 tasaciones)
+  const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "";
+  const allowed = await checkRateLimit(ip);
+  if (!allowed) {
+    return res.status(429).json({ error: { message: "Alcanzaste el límite de tasaciones diarias. Volvé mañana o contactanos por WhatsApp." } });
+  }
 
   const body = { ...req.body };
   const isSearch = body?.tools?.[0]?.type === "web_search_20250305";
