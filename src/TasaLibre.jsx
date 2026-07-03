@@ -889,7 +889,7 @@ export default function TasaLibre() {
         if (tipo === "lote" && loteSubtipo === "cerrado") {
           return [
             `lotes terrenos ${op} "${nombreBarrio}" listado precios zonaprop`,
-            `"${nombreBarrio}" lote ${op} precio m2 properati`,
+            `"${nombreBarrio}" lote terreno precio medio m2 USD site:properati.com.ar`,
             `"${nombreBarrio}" terreno ${op} ${monedaShort} remax`,
           ];
         }
@@ -933,7 +933,7 @@ export default function TasaLibre() {
         if (tipo === "ph" && deptoSubtipo === "cerrado") {
           return [
             `ph ${op} "${nombreBarrio}" listado precios zonaprop`,
-            `"${nombreBarrio}" ph ${op} precio medio m2 properati`,
+            `"${nombreBarrio}" ph precio medio m2 USD site:properati.com.ar`,
             `"${nombreCompleto}" ph ${op} ${monedaShort} remax`,
           ];
         }
