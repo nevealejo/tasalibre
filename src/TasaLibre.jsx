@@ -1162,7 +1162,7 @@ export default function TasaLibre() {
       msgContent.push({ type: "text", text: prompt });
       setLoadStep(5);
 
-      const bodyStr = JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 2000, messages: [{ role: "user", content: msgContent }] });
+      const bodyStr = JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 3500, messages: [{ role: "user", content: msgContent }] });
 
       let res, responseText;
       try {
@@ -1198,7 +1198,20 @@ export default function TasaLibre() {
       let parsed;
       try { parsed = JSON.parse(jsonStr); } catch(e) {
         const fixed = jsonStr.replace(/,\s*([}\]])/g,"$1").replace(/'/g,'"');
-        try { parsed = JSON.parse(fixed); } catch(e2) { throw new Error("JSON invalido: " + e.message + " | " + jsonStr.slice(0,200)); }
+        try { parsed = JSON.parse(fixed); } catch(e2) {
+          try {
+            let repaired = jsonStr;
+            const lastComma = repaired.lastIndexOf(",");
+            const lastCloseBrace = repaired.lastIndexOf("}");
+            if (lastComma > lastCloseBrace) repaired = repaired.slice(0, lastComma);
+            const opens = (repaired.match(/\{/g)||[]).length;
+            const closes = (repaired.match(/\}/g)||[]).length;
+            const opensArr = (repaired.match(/\[/g)||[]).length;
+            const closesArr = (repaired.match(/\]/g)||[]).length;
+            repaired += "]".repeat(Math.max(0, opensArr-closesArr)) + "}".repeat(Math.max(0, opens-closes));
+            parsed = JSON.parse(repaired);
+          } catch(e3) { throw new Error("JSON invalido: " + e.message + " | " + jsonStr.slice(0,200)); }
+        }
       }
       if (parsed.valor_usd === undefined || parsed.valor_usd === null) throw new Error("Respuesta invalida de la IA. Keys: " + Object.keys(parsed).join(", "));
       // valor_usd === 0 es válido: significa "sin datos suficientes para esta zona"
