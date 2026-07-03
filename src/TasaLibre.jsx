@@ -476,6 +476,8 @@ export default function TasaLibre() {
   const [deptoSubtipo, setDeptoSubtipo] = useState(""); // "tradicional" | "cerrado"
   const [sectorBarrio, setSectorBarrio] = useState(""); // sub-barrio / sector
   const [addrWarning, setAddrWarning] = useState(false); // dirección no verificada
+  const [adminSearch, setAdminSearch] = useState(""); // búsqueda en admin
+  const [adminFilter, setAdminFilter] = useState("todos"); // filtro estado admin
   const [casaNombreBarrio, setCasaNombreBarrio] = useState("");
 
   // Departamento extras
@@ -1241,7 +1243,7 @@ export default function TasaLibre() {
     setScreen("hero"); setStep(1); setResult(null);
     setPhotos(Array(6).fill(null)); setNombre(""); setWhatsapp("");
     setBarrio(""); setCalle(""); setNumero(""); setSupTotal(""); setSupCub(""); setAntiguedad("");
-    setAmenities([]); setEstado("muy_bueno"); setApiError(""); setErrContact(""); setDisposicion("");
+    setAmenities([]); setEstado("muy_bueno"); setApiError(""); setDisposicion("");
     setCasaSubtipo(""); setCasaNombreBarrio(""); setDeptoSubtipo(""); setSectorBarrio(""); setLoteSubtipo(""); setNombreBarrioPrivado("");
     setZonificacion(""); setLoteAdicionales([]); setLoteFondo(""); setLoteFrente(""); setLoteConEdificacion(false);
     setPiso(""); setAscensor(false); setPhUbicacion(""); setPhAlFrente(false); setPhPasillo(false); setPhEscalera(""); setPhAccesoEstado(""); setRawDebug("");
