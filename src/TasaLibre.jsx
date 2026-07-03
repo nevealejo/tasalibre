@@ -886,9 +886,9 @@ export default function TasaLibre() {
 
         if (tipo === "lote" && loteSubtipo === "cerrado") {
           return [
-            `"${nombreBarrio}" lote ${op} ${monedaShort} site:properati.com.ar OR site:remax.com.ar`,
-            `"${nombreBarrio}" terreno ${op} ${monedaShort} argencasas OR remax precio`,
-            `"${nombreBarrio}" barrio cerrado lote terreno ${op} ${monedaShort} m2`,
+            `lotes terrenos ${op} "${nombreBarrio}" listado precios zonaprop`,
+            `"${nombreBarrio}" lote ${op} precio m2 properati`,
+            `"${nombreBarrio}" terreno ${op} ${monedaShort} remax`,
           ];
         }
         if (tipo === "lote" && loteSubtipo === "urbano") {
@@ -901,9 +901,9 @@ export default function TasaLibre() {
         if (tipo === "departamento" && deptoSubtipo === "cerrado") {
           const cocheraFilter = (amenities.includes("Cochera") || amenities.includes("Cochera doble")) ? "con cochera " : "";
           return [
-            `"${nombreCompleto}" departamento ${op} ${monedaShort} ${dormRef}${cocheraFilter}site:properati.com.ar OR site:remax.com.ar`,
-            `"${nombreCompleto}" depto ${op} ${monedaShort} ${supRef}${cocheraFilter}argencasas OR remax`,
-            `"${nombreBarrio}" barrio cerrado departamento ${op} ${monedaShort} ${ambientes} ambientes`,
+            `departamentos ${op} "${nombreBarrio}" ${ambientes} ambientes listado precios zonaprop`,
+            `"${nombreBarrio}" departamento ${op} precio medio m2 properati`,
+            `"${nombreCompleto}" departamento ${op} ${monedaShort} ${dormRef}${cocheraFilter}remax`,
           ];
         }
         if (tipo === "departamento") {
@@ -916,9 +916,9 @@ export default function TasaLibre() {
         }
         if (tipo === "casa" && casaSubtipo === "cerrado") {
           return [
-            `"${nombreCompleto}" casa ${op} ${monedaShort} site:properati.com.ar OR site:remax.com.ar`,
-            `"${nombreCompleto}" casa ${op} ${monedaShort} precio m2 argencasas OR remax`,
-            `"${nombreBarrio}" barrio cerrado casa ${op} ${monedaShort} ${dormRef}${supRef}`,
+            `casas ${op} "${nombreBarrio}" listado precios zonaprop`,
+            `"${nombreBarrio}" casa ${op} precio medio m2 properati`,
+            `"${nombreCompleto}" casa ${op} ${monedaShort} ${dormRef}remax`,
           ];
         }
         if (tipo === "casa") {
@@ -930,9 +930,9 @@ export default function TasaLibre() {
         }
         if (tipo === "ph" && deptoSubtipo === "cerrado") {
           return [
-            `"${nombreCompleto}" PH ${op} ${monedaShort} site:properati.com.ar OR site:remax.com.ar`,
-            `"${nombreCompleto}" ph ${op} ${monedaShort} argencasas OR remax`,
-            `"${nombreBarrio}" barrio cerrado ph ${op} ${monedaShort}`,
+            `ph ${op} "${nombreBarrio}" listado precios zonaprop`,
+            `"${nombreBarrio}" ph ${op} precio medio m2 properati`,
+            `"${nombreCompleto}" ph ${op} ${monedaShort} remax`,
           ];
         }
         if (tipo === "ph") {
@@ -1020,7 +1020,7 @@ export default function TasaLibre() {
       const searchPromises = queries.map(q => {
         const nombreBarrioCerrado = casaNombreBarrio || nombreBarrioPrivado || "";
         const bcContext = esCerradoSearch && nombreBarrioCerrado
-          ? "CRITICO BARRIO CERRADO: buscar UNICAMENTE propiedades DENTRO del barrio cerrado \"" + nombreBarrioCerrado + "\". Si un resultado no menciona explicitamente el nombre \"" + nombreBarrioCerrado + "\", DESCARTARLO aunque este cerca geograficamente. Los valores dentro del barrio son muy distintos a los de afuera. "
+          ? "CRITICO BARRIO CERRADO: buscar UNICAMENTE propiedades DENTRO del barrio cerrado \"" + nombreBarrioCerrado + "\" (los portales suelen tener paginas de listado propias del barrio: usalas). Si un resultado no pertenece al barrio, DESCARTARLO aunque este cerca geograficamente. FORMATO OBLIGATORIO DE RESPUESTA: cada linea DEBE empezar con \"" + nombreBarrioCerrado + " - \" seguido de los datos. Si encontras el dato \"precio medio por m2\" del barrio (Properati/Zonaprop lo publican), incluilo en una linea propia: \"" + nombreBarrioCerrado + " - PROMEDIO ZONAL: USD X/m2 (fuente estadistica)\". "
           : "";
         const m2Label = tipo === "casa" ? "m2 CUBIERTOS/construidos (NO el lote/terreno total)" : "m2";
         const formatoEstricto = " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos así: [direccion] - [" + precioLabel + "] - [" + m2Label + "]. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo." + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "");
@@ -1066,7 +1066,7 @@ export default function TasaLibre() {
             .filter(s => s.length > 10)
             .filter(linea => linea.toLowerCase().includes(nombreBarrioFiltro));
           if (partes.length > 0) {
-            comparablesData += " | " + partes.join(" | ").slice(0, 600);
+            comparablesData += " | " + partes.join(" | ").slice(0, 1500);
           }
           // Si NINGUNA línea menciona el barrio, se descarta todo el bloque (no se agrega nada)
         } else {
@@ -1107,7 +1107,7 @@ export default function TasaLibre() {
 
       const sinComparablesBarrioCerrado = esCerradoSearch && nombreBarrioFiltro && !comparablesData.trim();
       const comparablesCtx = comparablesData
-        ? "COMPARABLES(usa como base):" + comparablesData.slice(0, 800)
+        ? "COMPARABLES(usa como base):" + comparablesData.slice(0, esCerradoSearch ? 3000 : 800)
         : (sinComparablesBarrioCerrado
             ? "ADVERTENCIA: no se encontraron comparables VERIFICADOS dentro del barrio cerrado " + nombreBarrioFiltro + " en esta busqueda. NO inventes precios de memoria. Usa tu conocimiento real del segmento (barrios cerrados de categoria similar en la misma zona) solo como referencia aproximada, ampliando el rango +-15%, y aclaralo en el analisis."
             : "Sin comparables online.");
@@ -1116,7 +1116,7 @@ export default function TasaLibre() {
         "PROPIEDAD: " + propData + "\n" +
         comparablesCtx + "\n" +
         (esCerradoSearch && (casaNombreBarrio||nombreBarrioPrivado)
-          ? "REGLAS BARRIO CERRADO: 1)Usar SOLO comparables cuyo texto ORIGINAL mencione explicitamente \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\". 2)PROHIBIDO usar propiedades fuera del perimetro aunque esten geograficamente cerca o en la misma localidad/partido: el m2 dentro del barrio cerrado vale 2-4 veces mas que afuera. 3)Antes de incluir un comparable en el JSON final, releelo: si NO tiene el nombre del barrio en el texto que lo describe, NO LO INCLUYAS, aunque parezca de la misma zona. 4)Si hay pocos comparables validos del barrio, usar tu conocimiento de barrios cerrados de categoria EQUIVALENTE (mismo perfil, misma zona geografica amplia), NUNCA barrio abierto ni la localidad general. 5)Promedio m2 de comparables validos=base. 6)Rango+-5%. 7)CONSERVADOR.\n"
+          ? "REGLAS BARRIO CERRADO: 1)Usar SOLO comparables cuyo texto ORIGINAL mencione explicitamente \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\". 2)PROHIBIDO usar propiedades fuera del perimetro aunque esten geograficamente cerca o en la misma localidad/partido: el m2 dentro del barrio cerrado vale 2-4 veces mas que afuera. 3)Antes de incluir un comparable en el JSON final, releelo: si NO tiene el nombre del barrio, NO LO INCLUYAS. 4)ANCLA ESTADISTICA: si el contexto incluye un precio medio por m2 del barrio (Properati/Zonaprop lo publican), usalo como base principal SOLO si corresponde al MISMO TIPO de propiedad que se tasa. 5)TIPO IMPORTA: dentro del mismo barrio cerrado, los DEPARTAMENTOS (especialmente a estrenar o recientes) valen 20-40% MAS por m2 que las casas. Si tasas un departamento y el promedio disponible es de casas, ajustalo hacia arriba. Si tasas una casa y el promedio es de deptos, ajustalo hacia abajo. 6)SANITY CHECK FINAL: el precio/m2 resultante en un barrio cerrado consolidado NUNCA puede quedar por debajo de 1.5 veces el m2 de la localidad abierta circundante. Si tu calculo da menos, esta MAL: revisalo usando los comparables del barrio. 7)Si hay pocos comparables validos del barrio, usar barrios cerrados de categoria EQUIVALENTE en la misma zona, NUNCA barrio abierto. 8)Promedio m2 de comparables validos del MISMO TIPO=base. 9)Rango+-5%.\n"
           : "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n") +
         "OPERACION: " + (operacion === "alquiler" ? "ALQUILER - calcular valor de alquiler mensual en DOLARES AMERICANOS." + (dolarBlue > 0 ? " Tipo de cambio dolar blue: $" + dolarBlue.toLocaleString("es-AR") + ". Si encontras comparables en pesos, convertirlos a dolares con ese tipo de cambio antes de calcular el promedio." : "") + " Los comparables son precios de alquiler, NO de venta." : "VENTA - calcular valor de venta en DOLARES AMERICANOS.") + "\n" +
         "MODELO DE VALUACION:\n" +
