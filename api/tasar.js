@@ -67,7 +67,7 @@ async function getNearbyStreets(lat, lon, radius) {
   } catch { return []; }
 }
 
-async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCochera) {
+async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCochera, esCerrado) {
   try {
     const tokkoKey = process.env.TOKKO_API_KEY;
     if (!tokkoKey) return [];
@@ -121,14 +121,19 @@ async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCoch
     console.log(`Tokko returned ${total} total, ${(data.objects||[]).length} objects`);
 
     // Filtrar por barrio/zona
-    const kw = barrio.toLowerCase().split(" ").filter(w => w.length > 3);
+    // Barrio cerrado: exigir la FRASE COMPLETA del nombre (ej "nuevo quilmes") en ubicación,
+    // dirección o TÍTULO de la publicación — nunca palabras sueltas (matchearían toda la localidad).
+    const barrioLower = barrio.toLowerCase().trim();
+    const kw = barrioLower.split(" ").filter(w => w.length > 3);
     const filtered = (data.objects || []).filter(p => {
       const loc = [
         p.location?.name || "",
         p.location?.full_location || "",
-        p.address || ""
+        p.address || "",
+        p.publication_title || "",
+        p.fake_address || ""
       ].join(" ").toLowerCase();
-      return kw.some(w => loc.includes(w));
+      return esCerrado ? loc.includes(barrioLower) : kw.some(w => loc.includes(w));
     });
 
     // Filtrar por cochera si aplica
@@ -180,12 +185,12 @@ export default async function handler(req, res) {
   const isSearch = body?.tools?.[0]?.type === "web_search_20250305";
 
   if (isSearch && body._meta) {
-    const { address, tipo, operacion, barrio, supTotal, conCochera } = body._meta;
+    const { address, tipo, operacion, barrio, supTotal, conCochera, esCerrado } = body._meta;
     delete body._meta;
 
     const [coords, tokkoComps] = await Promise.all([
-      geocodeAddress(address),
-      searchTokkoComparables(tipo, operacion, barrio, supTotal, conCochera)
+      address ? geocodeAddress(address) : Promise.resolve(null),
+      searchTokkoComparables(tipo, operacion, barrio, supTotal, conCochera, !!esCerrado)
     ]);
 
     let streetContext = "";
@@ -197,7 +202,9 @@ export default async function handler(req, res) {
 
     let tokkoContext = "";
     if (tokkoComps.length > 0) {
-      tokkoContext = `COMPARABLES REALES TOKKO BROKER RED COMPLETA (priorizar sobre cualquier otra fuente): ` +
+      tokkoContext = (esCerrado
+        ? `COMPARABLES REALES TOKKO VERIFICADOS DENTRO DEL BARRIO "${barrio}" (priorizar sobre cualquier otra fuente): `
+        : `COMPARABLES REALES TOKKO BROKER RED COMPLETA (priorizar sobre cualquier otra fuente): `) +
         tokkoComps.map(c =>
           `${c.direccion} - ${c.barrio} - ${c.m2}m² cubiertos - ${c.moneda} ${c.precio_usd.toLocaleString("es-AR")} - USD ${c.precio_m2}/m²`
         ).join(" | ") + `. Usar estos precios/m² como base del cálculo. `;
