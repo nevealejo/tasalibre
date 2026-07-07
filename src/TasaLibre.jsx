@@ -1024,10 +1024,12 @@ export default function TasaLibre() {
       const searchPromises = queries.map(q => {
         const nombreBarrioCerrado = casaNombreBarrio || nombreBarrioPrivado || "";
         const bcContext = esCerradoSearch && nombreBarrioCerrado
-          ? "CRITICO BARRIO CERRADO: buscar publicaciones (prioridad: MercadoLibre inmuebles) de propiedades DENTRO del barrio cerrado \"" + nombreBarrioCerrado + "\". REGLA DE ORO: incluir una publicacion SOLO si su TITULO menciona explicitamente \"" + nombreBarrioCerrado + "\" (ej: 'Casa en venta en " + nombreBarrioCerrado + "...'). Si el titulo NO nombra el barrio, DESCARTARLA aunque la ubicacion o descripcion parezcan coincidir o este geograficamente cerca. NO uses paginas de estadisticas ni promedios zonales: solo publicaciones individuales con titulo verificado. FORMATO OBLIGATORIO DE RESPUESTA: cada linea DEBE empezar con \"" + nombreBarrioCerrado + " - \" seguido del TITULO textual de la publicacion entre comillas, y luego los datos. "
+          ? "CRITICO BARRIO CERRADO: buscar publicaciones (prioridad: MercadoLibre inmuebles) de propiedades DENTRO del barrio cerrado \"" + nombreBarrioCerrado + "\". REGLA DE ORO: incluir una publicacion SOLO si su TITULO menciona explicitamente \"" + nombreBarrioCerrado + "\" (ej: 'Casa en venta en " + nombreBarrioCerrado + "...'). Si el titulo NO nombra el barrio, DESCARTARLA aunque la ubicacion o descripcion parezcan coincidir o este geograficamente cerca. NO uses paginas de estadisticas ni promedios zonales: solo publicaciones individuales con titulo verificado. "
           : "";
         const m2Label = tipo === "casa" ? "m2 CUBIERTOS/construidos (NO el lote/terreno total)" : "m2";
-        const formatoEstricto = " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos así: [direccion] - [" + precioLabel + "] - [" + m2Label + "]. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo." + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "");
+        const formatoEstricto = esCerradoSearch && nombreBarrioCerrado
+          ? ` FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea así (todo en la misma línea, sin párrafos, separando cada campo con el caracter " | "): ${nombreBarrioCerrado} | "[título textual de la publicación]" | [dirección] | [${precioLabel}] | [${m2Label}]. No agregues texto introductorio ni explicativo. Si una publicación no tiene el nombre del barrio en su título, NO la incluyas como línea.` + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "")
+          : " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos, separando cada campo con el caracter \" | \" así: [direccion] | [" + precioLabel + "] | [" + m2Label + "]. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo." + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "");
         const searchPrompt = bcContext + streetContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + formatoEstricto + " Para el campo fuente usa siempre: Relevamiento de mercado.";
         return fetch("/api/tasar", {
           method: "POST",
@@ -1035,7 +1037,7 @@ export default function TasaLibre() {
           signal: controller.signal,
           body: JSON.stringify({
             model: "claude-sonnet-4-6",
-            max_tokens: 400,
+            max_tokens: esCerradoSearch ? 700 : 400,
             tools: [{ type: "web_search_20250305", name: "web_search" }],
             messages: [{ role: "user", content: searchPrompt }],
             _meta: { address: esCerradoSearch ? "" : address, tipo, operacion, barrio: esCerradoSearch ? nombreBarrioCerrado : barrio, esCerrado: esCerradoSearch, supTotal, conCochera: amenities.includes("Cochera") }
@@ -1063,9 +1065,12 @@ export default function TasaLibre() {
           // FILTRO PROGRAMÁTICO: descartar líneas/fragmentos que NO mencionen el barrio.
           // No confiamos solo en la instrucción a la IA — el web_search interno puede
           // ampliar la búsqueda por su cuenta e ignorar el site:/comillas.
-          // Split robusto: saltos de línea, numeración (1. 2.), viñetas (- •) o "USD"/precio como separador de items
+          // Split robusto: saltos de línea, numeración (1. 2.), viñetas (•)
+          // IMPORTANTE: NO se splitea por "-" — nuestro propio formato usa " | " como
+          // separador de campos dentro de una misma línea (barrio | título | dirección | precio | m2),
+          // así que un split por guión destrozaría cada comparable en pedazos.
           const partes = res.text
-            .split(/\n+|(?=\d+[\.\)]\s)|(?=[•\-]\s)/)
+            .split(/\n+|(?=\d+[\.\)]\s)|(?=•\s)/)
             .map(s => s.trim())
             .filter(s => s.length > 10)
             .filter(linea => linea.toLowerCase().includes(nombreBarrioFiltro));
