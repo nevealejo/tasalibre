@@ -1,5 +1,35 @@
 const SUPABASE_URL = "https://qhojftormgvcdncaaftx.supabase.co";
 
+// ── Notificación WhatsApp al admin vía CallMeBot ──────────────────────────
+// Devuelve un objeto diagnóstico completo para poder ver qué pasó.
+async function notifyWhatsApp(msg) {
+  const diag = {
+    apikey_presente: !!process.env.CALLMEBOT_APIKEY,
+    phone_env_presente: !!process.env.CALLMEBOT_PHONE,
+    phone_usado: process.env.CALLMEBOT_PHONE || "5491140356742 (fallback)",
+    resultado: "no_intentado"
+  };
+  if (!process.env.CALLMEBOT_APIKEY) {
+    diag.resultado = "sin_apikey_configurada";
+    console.warn("CALLMEBOT_APIKEY no está configurada en Vercel");
+    return diag;
+  }
+  try {
+    const notifyPhone = process.env.CALLMEBOT_PHONE || "5491140356742";
+    const waUrl = `https://api.callmebot.com/whatsapp.php?phone=${notifyPhone}&text=${encodeURIComponent(msg)}&apikey=${process.env.CALLMEBOT_APIKEY}`;
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 10000);
+    const waRes = await fetch(waUrl, { signal: ctrl.signal });
+    const waText = await waRes.text();
+    diag.resultado = `status_${waRes.status}: ${waText.slice(0, 300)}`;
+    console.log("CallMeBot response:", diag.resultado);
+  } catch (e) {
+    diag.resultado = "error: " + e.message;
+    console.warn("WhatsApp notify failed:", e.message);
+  }
+  return diag;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
@@ -16,6 +46,12 @@ export default async function handler(req, res) {
   };
 
   if (req.method === "GET") {
+    // ── ENDPOINT DE DIAGNÓSTICO: /api/leads?test=whatsapp ──
+    // Usa exactamente las mismas env vars y código que la notificación real.
+    if (req.query?.test === "whatsapp") {
+      const diag = await notifyWhatsApp("🔧 Test de notificación TasaLibre — si te llegó esto, el sistema funciona.");
+      return res.status(200).json({ test: "whatsapp", ...diag, hora: new Date().toISOString() });
+    }
     const r = await fetch(`${SUPABASE_URL}/rest/v1/leads?select=*&order=created_at.desc`, { headers });
     const data = await r.json();
     return res.status(r.status).json(data);
@@ -44,29 +80,18 @@ export default async function handler(req, res) {
       })
     });
 
-    // Notificación WhatsApp al admin (CallMeBot) — con logging real para diagnóstico
-    let waStatus = "no_intentado";
-    if (r.ok) {
-      if (!process.env.CALLMEBOT_APIKEY) {
-        waStatus = "sin_apikey_configurada";
-        console.warn("CALLMEBOT_APIKEY no está configurada en Vercel");
-      } else {
-        try {
-          const msg = `🏠 Nuevo lead TasaLibre!\n${nombre || "Sin nombre"} - ${whatsapp || "sin tel"}\n${tipo} en ${operacion} - ${address || ""}\nValor: USD ${valorUsd ? Number(valorUsd).toLocaleString("es-AR") : "?"}`;
-          const notifyPhone = process.env.CALLMEBOT_PHONE || "5491140356742";
-          const waUrl = `https://api.callmebot.com/whatsapp.php?phone=${notifyPhone}&text=${encodeURIComponent(msg)}&apikey=${process.env.CALLMEBOT_APIKEY}`;
-          const waRes = await fetch(waUrl);
-          const waText = await waRes.text();
-          waStatus = `status_${waRes.status}: ${waText.slice(0, 200)}`;
-          console.log("CallMeBot response:", waStatus);
-        } catch(e) {
-          waStatus = "error: " + e.message;
-          console.warn("WhatsApp notify failed:", e.message);
-        }
-      }
+    // Notificación WhatsApp al admin — SIEMPRE se intenta, incluso si falló el guardado,
+    // para que ninguna tasación pase desapercibida.
+    let supabaseError = "";
+    if (!r.ok) {
+      try { supabaseError = (await r.text()).slice(0, 200); } catch(e) {}
+      console.error("Supabase insert failed:", r.status, supabaseError);
     }
+    const msg = (r.ok ? "🏠 Nuevo lead TasaLibre!" : "⚠️ Tasación realizada pero el lead NO se guardó (error " + r.status + ")") +
+      `\n${nombre || "Sin nombre"} - ${whatsapp || "sin tel"}\n${tipo} en ${operacion} - ${address || ""}\nValor: USD ${valorUsd ? Number(valorUsd).toLocaleString("es-AR") : "?"}`;
+    const waDiag = await notifyWhatsApp(msg);
 
-    return res.status(r.ok ? 200 : r.status).json({ ok: r.ok, waStatus });
+    return res.status(r.ok ? 200 : r.status).json({ ok: r.ok, waStatus: waDiag.resultado, waDiag, supabaseError: supabaseError || undefined });
   }
 
   if (req.method === "PATCH") {
