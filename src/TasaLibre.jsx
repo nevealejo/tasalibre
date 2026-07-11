@@ -1119,10 +1119,17 @@ export default function TasaLibre() {
       const supRef = supTotal ? supTotal + "m2 " : "";
       const dormRef = (tipo === "departamento" || tipo === "casa" || tipo === "ph") ? dormitorios + " dormitorios " : "";
 
-      const buildQueries = () => {
+      // BLOQUE 9: en zonas abiertas (no barrio cerrado), la geolocalización real
+      // de la dirección (calles cercanas obtenidas por geocode+Overpass) manda
+      // sobre el texto libre de "barrio" — así se buscan comparables cerca de
+      // donde el sistema efectivamente ubicó la propiedad, no de una subzona
+      // que el usuario pudo tipear de forma imprecisa. NO aplica a barrio
+      // cerrado: ahí el filtro sigue siendo 100% por nombre del barrio/sector.
+      const buildQueries = (streetsNearby) => {
         const op = operacion === "alquiler" ? "alquiler" : "venta";
         const moneda = operacion === "alquiler" ? "pesos mensuales" : "dolares";
         const monedaShort = operacion === "alquiler" ? "pesos" : "dolares";
+        const geoRef = (streetsNearby && streetsNearby.length) ? streetsNearby.slice(0, 2).join(" o ") + ", " : "";
 
         // Para barrio cerrado: el nombre del barrio ES el filtro principal
         const esCerrado = casaSubtipo === "cerrado" || deptoSubtipo === "cerrado" || loteSubtipo === "cerrado";
@@ -1140,15 +1147,15 @@ export default function TasaLibre() {
         if (tipo === "lote" && loteSubtipo === "urbano") {
           if (loteEntorno === "centrico") {
             return [
-              "lote apto edificio " + barrio + " " + provincia + " " + op + " precio " + monedaShort,
-              "terreno apto desarrollo emprendimiento " + barrio + " centro " + provincia + " " + monedaShort,
-              "lote " + op + " " + calleRef + barrio + " zonificacion FOT " + monedaShort + " mercadolibre inmuebles",
+              "lote apto edificio " + geoRef + barrio + " " + provincia + " " + op + " precio " + monedaShort,
+              "terreno apto desarrollo emprendimiento " + geoRef + barrio + " centro " + provincia + " " + monedaShort,
+              "lote " + op + " " + calleRef + geoRef + barrio + " zonificacion FOT " + monedaShort + " mercadolibre inmuebles",
             ];
           }
           return [
-            "lote " + op + " " + calleRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
-            "terreno " + op + " " + barrio + " " + provincia + " " + supRef + "precio " + monedaShort + " argenprop",
-            "lote urbano " + barrio + " " + provincia + " " + op + " " + monedaShort + " mercadolibre inmuebles",
+            "lote " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
+            "terreno " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + "precio " + monedaShort + " argenprop",
+            "lote urbano " + geoRef + barrio + " " + provincia + " " + op + " " + monedaShort + " mercadolibre inmuebles",
           ];
         }
         if (tipo === "departamento" && deptoSubtipo === "cerrado") {
@@ -1162,9 +1169,9 @@ export default function TasaLibre() {
         if (tipo === "departamento") {
           const cocheraFilter = (amenities.includes("Cochera") || amenities.includes("Cochera doble")) ? "con cochera " : "sin cochera ";
           return [
-            "departamento " + op + " " + calleRef + barrio + " " + provincia + " " + dormRef + cocheraFilter + "precio " + monedaShort + " zonaprop",
-            "departamento " + op + " " + barrio + " " + provincia + " " + ambientes + " ambientes " + cocheraFilter + monedaShort + " argenprop",
-            "depto " + op + " " + barrio + " " + provincia + " " + supRef + dormRef + cocheraFilter + monedaShort,
+            "departamento " + op + " " + calleRef + geoRef + barrio + " " + provincia + " " + dormRef + cocheraFilter + "precio " + monedaShort + " zonaprop",
+            "departamento " + op + " " + geoRef + barrio + " " + provincia + " " + ambientes + " ambientes " + cocheraFilter + monedaShort + " argenprop",
+            "depto " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + dormRef + cocheraFilter + monedaShort,
           ];
         }
         if (tipo === "casa" && casaSubtipo === "cerrado") {
@@ -1176,9 +1183,9 @@ export default function TasaLibre() {
         }
         if (tipo === "casa") {
           return [
-            "casa " + op + " " + calleRef + barrio + " " + provincia + " " + dormRef + "precio " + monedaShort + " zonaprop",
-            "casa " + op + " " + barrio + " " + provincia + " " + supRef + monedaShort + " argenprop",
-            "casa " + barrio + " " + provincia + " " + dormRef + supRef + op + " " + monedaShort,
+            "casa " + op + " " + calleRef + geoRef + barrio + " " + provincia + " " + dormRef + "precio " + monedaShort + " zonaprop",
+            "casa " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + monedaShort + " argenprop",
+            "casa " + geoRef + barrio + " " + provincia + " " + dormRef + supRef + op + " " + monedaShort,
           ];
         }
         if (tipo === "ph" && deptoSubtipo === "cerrado") {
@@ -1190,26 +1197,25 @@ export default function TasaLibre() {
         }
         if (tipo === "ph") {
           return [
-            "PH " + op + " " + calleRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
-            "PH " + op + " " + barrio + " " + provincia + " " + ambientes + " ambientes " + monedaShort + " argenprop",
-            "ph " + barrio + " " + provincia + " " + op + " " + monedaShort,
+            "PH " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
+            "PH " + op + " " + geoRef + barrio + " " + provincia + " " + ambientes + " ambientes " + monedaShort + " argenprop",
+            "ph " + geoRef + barrio + " " + provincia + " " + op + " " + monedaShort,
           ];
         }
         if (tipo === "local") {
           return [
-            "local comercial " + op + " " + calleRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
-            "local " + op + " " + barrio + " " + provincia + " " + supRef + monedaShort + " argenprop",
-            "local comercial " + barrio + " " + provincia + " " + op + " " + monedaShort + " mercadolibre",
+            "local comercial " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
+            "local " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + monedaShort + " argenprop",
+            "local comercial " + geoRef + barrio + " " + provincia + " " + op + " " + monedaShort + " mercadolibre",
           ];
         }
         return [
-          tipo + " " + op + " " + calleRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
-          tipo + " " + op + " " + barrio + " " + provincia + " " + monedaShort + " argenprop",
-          tipo + " " + op + " " + barrio + " " + provincia + " " + monedaShort + " mercadolibre inmuebles",
+          tipo + " " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
+          tipo + " " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " argenprop",
+          tipo + " " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " mercadolibre inmuebles",
         ];
       };
 
-      const queries = buildQueries();
       let comparablesData = "";
       let dolarBlue = 0;
 
@@ -1233,6 +1239,7 @@ export default function TasaLibre() {
       let streetContext = "";
       let tokkoContext = "";
       let tokkoComps = [];
+      let streetsNearby = [];
       try {
         const enrichRes = await fetch("/api/tasar", {
           method: "POST",
@@ -1252,7 +1259,16 @@ export default function TasaLibre() {
         streetContext = enrichData.streetContext || "";
         tokkoContext = enrichData.tokkoContext || "";
         tokkoComps = enrichData.tokkoComps || [];
+        streetsNearby = enrichData.streetsNearby || [];
       } catch(e) { console.warn("Enriquecimiento falló:", e.message); }
+
+      // BLOQUE 9: las queries de búsqueda se arman DESPUÉS del enriquecimiento
+      // para poder usar las calles reales geolocalizadas (streetsNearby) en
+      // zonas abiertas — antes se armaban antes y solo podían usar el texto
+      // libre de "barrio". En barrio cerrado, streetsNearby siempre llega
+      // vacío (no se geocodifica ahí), así que buildQueries no cambia su
+      // comportamiento para esos casos.
+      const queries = buildQueries(streetsNearby);
 
       setLoadStep(2);
       const precioLabel = operacion === "alquiler" ? "precio alquiler mensual (en dolares o pesos)" : "precio venta en dolares";
@@ -1271,7 +1287,9 @@ export default function TasaLibre() {
         const m2Label = tipo === "casa" ? "m2 CUBIERTOS/construidos (NO el lote/terreno total)" : "m2";
         const formatoEstricto = esCerradoSearch && nombreBarrioCerrado
           ? ` FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea así (todo en la misma línea, sin párrafos, separando cada campo con el caracter " | "): ${nombreBarrioCerrado} | "[título textual de la publicación]" | [dirección] | [${precioLabel} EXACTO tal cual aparece en la fuente] | [${m2Label}]. No agregues texto introductorio ni explicativo. Si una publicación no tiene el nombre del barrio en su título, NO la incluyas como línea. Si tenés dudas de qué precio corresponde a esa publicación puntual, NO la incluyas. Si dice "a consultar" o no muestra precio numérico, NO la incluyas — buscá otra del mismo barrio que sí tenga precio visible.` + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "")
-          : " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos, separando cada campo con el caracter \" | \" así: [direccion] | [" + precioLabel + "] | [" + m2Label + "]. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo." + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "") + " DESCARTAR SIN PRECIO: si una publicación dice \"a consultar\", \"consultar precio\", \"precio no publicado\" o no muestra un precio numérico claro, NO la incluyas como línea — buscá otra publicación de la misma zona que sí tenga precio visible, en vez de listarla con precio 0. CRITICO ZONA: verificá que la dirección de cada publicación pertenezca realmente a la misma localidad/partido de \"" + address + "\" (mismo nombre de localidad, o calles/nomenclatura reconocibles de esa zona) — si la nomenclatura de calles corresponde claramente a otro partido/localidad, DESCARTALA aunque el buscador la haya devuelto.";
+          : " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos, separando cada campo con el caracter \" | \" así: [direccion] | [" + precioLabel + "] | [" + m2Label + "]. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo." + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "") + " DESCARTAR SIN PRECIO: si una publicación dice \"a consultar\", \"consultar precio\", \"precio no publicado\" o no muestra un precio numérico claro, NO la incluyas como línea — buscá otra publicación de la misma zona que sí tenga precio visible, en vez de listarla con precio 0." + (streetsNearby && streetsNearby.length
+            ? " CRITICO PROXIMIDAD (fuente de verdad = geolocalización): la propiedad fue geolocalizada y sus calles reales mas cercanas son: " + streetsNearby.slice(0, 6).join(", ") + ". Priorizá SIEMPRE publicaciones sobre esas calles o a poca distancia de ellas. Si una publicación esta en una zona/subzona con nombre distinto (ej otro barrio dentro de la misma ciudad) pero MUY lejos de esas calles, descartala aunque el nombre de la localidad coincida — son mercados con precios diferentes."
+            : " CRITICO ZONA: verificá que la dirección de cada publicación pertenezca realmente a la misma localidad/partido de \"" + address + "\" — si la nomenclatura de calles corresponde claramente a otro partido/localidad, DESCARTALA aunque el buscador la haya devuelto." + (barrio && barrio.trim() ? " Si \"" + barrio + "\" incluye un calificativo propio (Centro, Oeste, Norte, Sur, Este, etc.), usa SOLO publicaciones de ESA subzona exacta." : ""));
         // BLOQUE 8: streetContext y tokkoContext ya se resolvieron UNA vez en
         // la llamada de enriquecimiento de arriba — antes tasar.js los volvía
         // a calcular por cada una de estas 3 búsquedas.
@@ -1443,7 +1461,9 @@ export default function TasaLibre() {
         comparablesCtx + "\n" +
         (esCerradoSearch && (casaNombreBarrio||nombreBarrioPrivado)
           ? "REGLAS BARRIO CERRADO: 1)REGLA DE ORO: usar SOLO comparables cuyo TITULO de publicacion original mencione explicitamente \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\"" + (sectorBarrio ? " Y TAMBIEN el sector/complejo \"" + sectorBarrio + "\"" : "") + " (los vendedores SIEMPRE ponen el nombre del barrio cerrado en el titulo porque es el argumento de venta; si el titulo no lo nombra, la propiedad NO es del barrio)." + (sectorBarrio ? " 1b)CRITICO SECTOR: el barrio \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\" tiene VARIOS complejos/sectores internos con precios MUY diferentes entre si (a veces 30-50% de diferencia). NUNCA promediar comparables de otro sector distinto a \"" + sectorBarrio + "\" aunque esten dentro del mismo barrio cerrado — son productos distintos." : "") + " 2)PROHIBIDO usar propiedades fuera del perimetro aunque esten geograficamente cerca o en la misma localidad/partido: el m2 dentro del barrio cerrado vale 2-4 veces mas que afuera. 3)Antes de incluir un comparable en el JSON final, releelo: si su titulo NO tiene el nombre del barrio" + (sectorBarrio ? " Y el sector" : "") + ", NO LO INCLUYAS. 4)BASE DE CALCULO: el promedio de precio/m2 (sobre m2 CUBIERTOS) de los comparables con titulo verificado del MISMO TIPO es SIEMPRE la base principal. Un 'precio medio zonal' estadistico que aparezca en el contexto NUNCA es base: solo sirve como verificacion de coherencia (si tu promedio difiere mucho, revisa los comparables, pero decide con las publicaciones reales). 5)TIPO IMPORTA: dentro del mismo barrio cerrado, los DEPARTAMENTOS (especialmente a estrenar o recientes) valen 20-40% MAS por m2 que las casas. Si tasas un departamento y solo hay comparables de casas, ajusta hacia arriba. Si tasas una casa y solo hay deptos, ajusta hacia abajo. 6)SANITY CHECK FINAL: el precio/m2 resultante en un barrio cerrado consolidado NUNCA puede quedar por debajo de 1.5 veces el m2 de la localidad abierta circundante. Si tu calculo da menos, esta MAL: revisalo usando los comparables del barrio. 7)Si hay pocos comparables validos del barrio" + (sectorBarrio ? "/sector" : "") + ", usar barrios cerrados de categoria EQUIVALENTE en la misma zona, NUNCA barrio abierto. 8)Rango+-5%. 9)Si el contexto incluye una 'ANCLA CALCULADA POR CODIGO', esa cifra fue calculada matematicamente por el sistema (no por vos) a partir de los mismos comparables, y es mas confiable que tu propia lectura del texto: tu precio_m2_usd final debe estar dentro de +-20% de esa ancla, salvo justificacion explicita en el analisis.\n"
-          : "REGLAS: 1)BASE DE CALCULO: precio_base_m2_usd es el promedio de precio/m2 (sobre m2 CUBIERTOS) de los comparables reales encontrados en la busqueda para " + address + " y su zona inmediata — NUNCA un valor de memoria, tope regional fijo, ni comparacion con otras zonas (CABA u otras). 2)Priorizar los 6 comparables MAS CERCANOS a " + address + " por sobre cualquier otro. 3)Si el contexto incluye una 'ANCLA CALCULADA POR CODIGO', tu precio_base_m2_usd debe estar dentro de +-20% de esa cifra, salvo justificacion explicita en el analisis. 4)Rango+-5%. 5)CONSERVADOR: ante pocos comparables, preferir un valor mas bajo antes que sobreestimar.\n") +
+          : "REGLAS: 1)BASE DE CALCULO: precio_base_m2_usd es el promedio de precio/m2 (sobre m2 CUBIERTOS) de los comparables reales encontrados en la busqueda para " + address + " y su zona inmediata — NUNCA un valor de memoria, tope regional fijo, ni comparacion con otras zonas (CABA u otras). 2)Priorizar los 6 comparables MAS CERCANOS a " + address + " por sobre cualquier otro. 3)Si el contexto incluye una 'ANCLA CALCULADA POR CODIGO', tu precio_base_m2_usd debe estar dentro de +-20% de esa cifra, salvo justificacion explicita en el analisis. 4)Rango+-5%. 5)CONSERVADOR: ante pocos comparables, preferir un valor mas bajo antes que sobreestimar." + (streetsNearby && streetsNearby.length
+            ? " 6)CRITICO PROXIMIDAD (fuente de verdad = geolocalizacion): la direccion fue geolocalizada; sus calles reales mas cercanas son: " + streetsNearby.slice(0, 6).join(", ") + ". En el campo 'comparables' final, priorizá publicaciones sobre esas calles o muy cerca de ellas por sobre cualquier otra. Si una publicacion queda lejos de esas calles aunque figure en la misma ciudad/localidad, no la uses como referencia principal."
+            : (barrio && barrio.trim() ? " 6)CRITICO SUBZONA: la propiedad esta en \"" + barrio + "\". Si ese nombre tiene un calificativo propio (Centro, Oeste, Norte, Sur, Este), en el campo 'comparables' final NUNCA incluyas publicaciones de otra subzona distinta de la misma ciudad, aunque el texto de busqueda las mencione — son mercados con precios diferentes." : "")) + "\n") +
         (tipo === "lote" && loteSubtipo === "urbano" && loteEntorno === "centrico"
           ? "REGLAS LOTE CENTRICO (edificabilidad): 1)Este lote esta en zona centrica/sobre avenida: su valor lo define el POTENCIAL CONSTRUCTIVO, no el m2 residencial. 2)BASE: usar comparables marcados [DESARROLLO] o que mencionen 'apto edificio/desarrollo/emprendimiento' o zonificacion (R2, R3, C, FOT); los [RESIDENCIAL] solo sirven como PISO minimo. 3)Si los comparables traen zonificacion/FOT, mencionalos en el analisis. 4)SANITY CHECK: un lote centrico NUNCA vale menos por m2 que el promedio de lotes residenciales de la misma localidad; si tu calculo da menos, esta MAL. 5)Si no hay comparables apto desarrollo en el contexto, usa los residenciales como piso y aplica un premium de zona centrica de +30-60% segun cuan comercial sea la ubicacion, aclarandolo en el analisis. 6)En el campo analisis, aclarar SIEMPRE que el valor definitivo de un lote centrico depende de la zonificacion municipal (FOS/FOT) y recomendar verificarla en el municipio antes de decidir.\n"
           : "") +
