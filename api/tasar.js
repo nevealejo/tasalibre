@@ -209,9 +209,11 @@ export default async function handler(req, res) {
     ]);
 
     let streetContext = "";
+    let streetsNearby = [];
     if (coords) {
       let streets = await getNearbyStreets(coords.lat, coords.lon, 500);
       if (streets.length < 3) streets = await getNearbyStreets(coords.lat, coords.lon, 1000);
+      streetsNearby = streets;
       if (streets.length) streetContext = `CALLES CERCANAS (500m): ${streets.join(", ")}. `;
 
       // Para lotes: chequear estación de tren cercana (detección automática de zona céntrica).
@@ -240,7 +242,10 @@ export default async function handler(req, res) {
         ).join(" | ") + `. Usar estos precios/m² como base del cálculo. `;
     }
 
-    return res.status(200).json({ streetContext, tokkoContext, tokkoComps });
+    // streetsNearby viaja crudo (array) ademas del texto ya formateado, para que
+    // el cliente pueda usar los nombres reales de calles geolocalizadas al armar
+    // las queries de busqueda de comparables en zonas abiertas (no barrio cerrado).
+    return res.status(200).json({ streetContext, streetsNearby, tokkoContext, tokkoComps, coords: coords || null });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
