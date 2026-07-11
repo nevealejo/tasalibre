@@ -927,7 +927,9 @@ export default function TasaLibre() {
         <span style="font-size:11px;font-weight:700;color:#1B4FD8;width:32px;text-align:right;">${s.valor}/10</span>
       </div>`).join('');
 
-    const comparablesHtml = (result.comparables||[]).map((c,i) => `
+    // Solo se muestran comparables con precio y m2 validos — los que la IA
+    // descarta (sin precio publicado) no deben aparecer como "USD 0/m2".
+    const comparablesHtml = comps.map((c,i) => `
       <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #F1F5F9;background:${i%2===0?'#F8FAFC':'white'};padding:8px 10px;margin:0 -10px;">
         <div>
           <div style="font-size:11px;font-weight:600;color:#0F1923;">${c.direccion}</div>
@@ -1268,8 +1270,8 @@ export default function TasaLibre() {
           : "";
         const m2Label = tipo === "casa" ? "m2 CUBIERTOS/construidos (NO el lote/terreno total)" : "m2";
         const formatoEstricto = esCerradoSearch && nombreBarrioCerrado
-          ? ` FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea así (todo en la misma línea, sin párrafos, separando cada campo con el caracter " | "): ${nombreBarrioCerrado} | "[título textual de la publicación]" | [dirección] | [${precioLabel} EXACTO tal cual aparece en la fuente] | [${m2Label}]. No agregues texto introductorio ni explicativo. Si una publicación no tiene el nombre del barrio en su título, NO la incluyas como línea. Si tenés dudas de qué precio corresponde a esa publicación puntual, NO la incluyas.` + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "")
-          : " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos, separando cada campo con el caracter \" | \" así: [direccion] | [" + precioLabel + "] | [" + m2Label + "]. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo." + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "");
+          ? ` FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea así (todo en la misma línea, sin párrafos, separando cada campo con el caracter " | "): ${nombreBarrioCerrado} | "[título textual de la publicación]" | [dirección] | [${precioLabel} EXACTO tal cual aparece en la fuente] | [${m2Label}]. No agregues texto introductorio ni explicativo. Si una publicación no tiene el nombre del barrio en su título, NO la incluyas como línea. Si tenés dudas de qué precio corresponde a esa publicación puntual, NO la incluyas. Si dice "a consultar" o no muestra precio numérico, NO la incluyas — buscá otra del mismo barrio que sí tenga precio visible.` + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "")
+          : " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos, separando cada campo con el caracter \" | \" así: [direccion] | [" + precioLabel + "] | [" + m2Label + "]. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo." + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "") + " DESCARTAR SIN PRECIO: si una publicación dice \"a consultar\", \"consultar precio\", \"precio no publicado\" o no muestra un precio numérico claro, NO la incluyas como línea — buscá otra publicación de la misma zona que sí tenga precio visible, en vez de listarla con precio 0. CRITICO ZONA: verificá que la dirección de cada publicación pertenezca realmente a la misma localidad/partido de \"" + address + "\" (mismo nombre de localidad, o calles/nomenclatura reconocibles de esa zona) — si la nomenclatura de calles corresponde claramente a otro partido/localidad, DESCARTALA aunque el buscador la haya devuelto.";
         // BLOQUE 8: streetContext y tokkoContext ya se resolvieron UNA vez en
         // la llamada de enriquecimiento de arriba — antes tasar.js los volvía
         // a calcular por cada una de estas 3 búsquedas.
@@ -2531,7 +2533,7 @@ export default function TasaLibre() {
                 ))}
               </div>
               <div className="res-card">
-                <div className="card-title">Precio promedio/m² · {(result.comparables||[]).filter(c=>c.precio_usd>0).length} comparables</div>
+                <div className="card-title">Precio promedio/m² · {(result.comparables||[]).filter(c=>c.precio_usd>0&&c.m2>0).length} comparables</div>
                 {(() => {
                   const comps = (result.comparables||[]).filter(c=>c.precio_usd>0&&c.m2>0);
                   const avgM2 = comps.length ? Math.round(comps.reduce((s,c)=>s+c.precio_usd/c.m2,0)/comps.length) : 0;
@@ -2548,7 +2550,7 @@ export default function TasaLibre() {
             <div className="res-card-full" style={{marginBottom:16}}>
               <div className="card-title">Comparables de mercado</div>
               <div style={{display:"flex",flexDirection:"column",gap:0}}>
-                {(result.comparables||[]).map((c,i)=>(
+                {(result.comparables||[]).filter(c=>c.precio_usd>0&&c.m2>0).map((c,i)=>(
                   <div key={i} className="comp-item">
                     <div style={{minWidth:0}}>
                       <div className="comp-addr">{c.direccion}</div>
