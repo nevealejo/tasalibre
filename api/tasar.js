@@ -2,7 +2,10 @@ export const config = { maxDuration: 300 };
 
 const SUPABASE_URL = "https://qhojftormgvcdncaaftx.supabase.co";
 
-// ── Rate limiting: máx 16 llamadas/día por IP (≈4 tasaciones) ─────────────
+// ── Rate limiting: máx 20 llamadas/día por IP (≈4 tasaciones) ─────────────
+// BLOQUE 12: subido de 16 a 20 porque cada tasación ahora hace 1 llamada
+// mas (_geocodeBatch) que antes no existía: 1 enrichOnly + 1 geocodeBatch +
+// 3 búsquedas + 1 tasación final = 5 llamadas por tasación (antes 4).
 async function checkRateLimit(ip) {
   try {
     const key = process.env.SUPABASE_SECRET_KEY;
@@ -23,7 +26,7 @@ async function checkRateLimit(ip) {
     }
 
     const count = rows[0].count || 0;
-    if (count >= 16) return false; // 4 tasaciones × 4 llamadas
+    if (count >= 20) return false; // 4 tasaciones × 5 llamadas
 
     await fetch(`${SUPABASE_URL}/rest/v1/rate_limits?ip=eq.${encodeURIComponent(ip)}&fecha=eq.${hoy}`, {
       method: "PATCH",
@@ -39,11 +42,84 @@ async function geocodeAddress(address) {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 4000);
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=ar`;
-    const res = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "TasaLibre/1.0", "Accept-Language": "es" } });
+    // BLOQUE 11: Nominatim exige un User-Agent que identifique la app con un
+    // contacto real (su política de uso bloquea con 403 a quien no lo tenga,
+    // y las IPs compartidas de Vercel/AWS son especialmente propensas a esto
+    // porque comparten cupo con miles de otras apps). Antes esto fallaba en
+    // silencio (catch -> null) sin dejar rastro: si Nominatim bloqueaba la
+    // IP de Vercel, el geocode SIEMPRE devolvía null y todo el filtro
+    // geografico de zona quedaba desactivado sin que nadie se enterara.
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { "User-Agent": "TasaLibre/1.0 (contacto: nevealejo@gmail.com)", "Accept-Language": "es" },
+    });
+    if (!res.ok) {
+      console.error(`Nominatim geocode fallo: HTTP ${res.status} para "${address}"`);
+      return null;
+    }
     const data = await res.json();
-    if (!data.length) return null;
+    if (!data.length) {
+      console.warn(`Nominatim no encontro resultados para "${address}"`);
+      return null;
+    }
     return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-  } catch { return null; }
+  } catch (e) {
+    console.error(`Geocode exception para "${address}": ${e.message}`);
+    return null;
+  }
+}
+
+// BLOQUE 12: geocoding con Google Maps — reemplaza a Nominatim como fuente
+// principal. Google no tiene el problema de bloquear IPs de hosting
+// compartido (Vercel/AWS) que sí tiene el servicio gratuito de OSM, y de
+// paso devuelve el barrio/subzona real de la dirección (address_components),
+// así el sistema puede detectar "Quilmes Centro" vs "Quilmes Oeste" solo,
+// sin depender de que el usuario lo tipee bien en el formulario.
+async function geocodeAddressGoogle(address) {
+  try {
+    const key = process.env.GOOGLE_MAPS_API_KEY;
+    if (!key) return null;
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 5000);
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${key}&region=ar&components=country:AR`;
+    const res = await fetch(url, { signal: ctrl.signal });
+    const data = await res.json();
+    if (data.status !== "OK" || !data.results?.length) {
+      if (data.status !== "ZERO_RESULTS") console.error(`Google geocode fallo para "${address}": ${data.status} ${data.error_message || ""}`);
+      return null;
+    }
+    const r = data.results[0];
+    const comp = r.address_components || [];
+    const barrioComp = comp.find(c => c.types.includes("sublocality") || c.types.includes("neighborhood"));
+    return {
+      lat: r.geometry.location.lat,
+      lon: r.geometry.location.lng,
+      barrioDetectado: barrioComp ? barrioComp.long_name : null,
+    };
+  } catch (e) {
+    console.error(`Google geocode exception para "${address}": ${e.message}`);
+    return null;
+  }
+}
+
+// Google primero (mas confiable); si no hay key configurada o falla, cae a
+// Nominatim como respaldo — mejor tener algo de geo-contexto que nada.
+async function geocodeAddressConFallback(address) {
+  const g = await geocodeAddressGoogle(address);
+  if (g) return g;
+  const n = await geocodeAddress(address);
+  return n ? { lat: n.lat, lon: n.lon, barrioDetectado: null } : null;
+}
+
+// Distancia real entre dos coordenadas (fórmula de Haversine, en km) — esto
+// es lo que permite un radio de verdad en vez de matching de texto por
+// nombre de calle, que es mucho mas fragil.
+function distanciaKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // ── Detección de centralidad: estación de tren a <600m (proxy clave en GBA,
@@ -204,7 +280,7 @@ export default async function handler(req, res) {
     const { address, tipo, operacion, barrio, supTotal, conCochera, esCerrado, loteCentrico } = req.body._meta || {};
 
     const [coords, tokkoComps] = await Promise.all([
-      address ? geocodeAddress(address) : Promise.resolve(null),
+      address ? geocodeAddressConFallback(address) : Promise.resolve(null),
       searchTokkoComparables(tipo, operacion, barrio, supTotal, conCochera, !!esCerrado)
     ]);
 
@@ -242,10 +318,39 @@ export default async function handler(req, res) {
         ).join(" | ") + `. Usar estos precios/m² como base del cálculo. `;
     }
 
+    // BLOQUE 11: log server-side para poder ver en Vercel -> Logs si el
+    // geocode esta funcionando o no en producción, sin depender de devtools.
+    console.log(`[_enrichOnly] address="${address}" geocodeOk=${!!coords} streetsNearby=${streetsNearby.length} barrioDetectado=${coords?.barrioDetectado || "-"}`);
+
     // streetsNearby viaja crudo (array) ademas del texto ya formateado, para que
     // el cliente pueda usar los nombres reales de calles geolocalizadas al armar
     // las queries de busqueda de comparables en zonas abiertas (no barrio cerrado).
-    return res.status(200).json({ streetContext, streetsNearby, tokkoContext, tokkoComps, coords: coords || null });
+    // BLOQUE 12: barrioDetectado sale de Google (address_components) — el
+    // barrio/subzona REAL de la direccion, sin depender de lo que haya
+    // tipeado el usuario en el formulario.
+    return res.status(200).json({
+      streetContext, streetsNearby, tokkoContext, tokkoComps, coords: coords || null,
+      barrioDetectado: coords?.barrioDetectado || null,
+      _debug: { geocodeOk: !!coords, streetsFound: streetsNearby.length },
+    });
+  }
+
+  // BLOQUE 12: geocodifica en batch direcciones candidatas de comparables y
+  // devuelve la distancia REAL (en km) a la propiedad tasada. Reemplaza el
+  // matching por texto de nombres de calle (fragil) por una verificacion
+  // matematica con coordenadas reales — esto es lo que permite un radio de
+  // verdad. No llama a Claude, corre antes/independiente de esa parte.
+  if (req.body?._geocodeBatch) {
+    const { direcciones, contexto, origenLat, origenLon } = req.body._meta || {};
+    const lista = (Array.isArray(direcciones) ? direcciones : []).slice(0, 15); // tope defensivo de costo
+    const resultados = await Promise.all(lista.map(async (direccion) => {
+      const consulta = contexto ? `${direccion}, ${contexto}` : direccion;
+      const g = await geocodeAddressGoogle(consulta);
+      if (!g || origenLat == null || origenLon == null) return { direccion, distanciaKm: null };
+      return { direccion, distanciaKm: Math.round(distanciaKm(origenLat, origenLon, g.lat, g.lon) * 100) / 100 };
+    }));
+    console.log(`[_geocodeBatch] ${lista.length} direcciones, ${resultados.filter(r=>r.distanciaKm!=null).length} geocodificadas OK`);
+    return res.status(200).json({ resultados });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
