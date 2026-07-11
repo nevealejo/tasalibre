@@ -485,6 +485,16 @@ function normalizarAUsd(precio, moneda, dolarBlueRate) {
   return Math.round(precio / dolarBlueRate);
 }
 
+// BLOQUE 9: normaliza texto para comparar calles/direcciones sin que
+// acentos, mayúsculas ni "Av."/"Avenida" hagan fallar un match real.
+function normalizarTexto(s) {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD").replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
+    .replace(/\bav\.?\b/g, "avenida")
+    .trim();
+}
+
 // ── BLOQUE 2: motor determinístico de ajustes estructurales ────────────────
 // disposición, ascensor, balcón, hall, estado y acceso de PH ya son datos
 // conocidos del formulario (los eligió el usuario en el wizard) — no hace
@@ -1390,12 +1400,32 @@ export default function TasaLibre() {
           // BLOQUE 3: antes esta rama (mercado abierto) nunca alimentaba
           // preciosM2Calculados — el ancla solo existía para barrio cerrado.
           // Ahora se extraen los mismos precio/m2 verificados por código acá.
-          res.text
+          const partes = res.text
             .split(/\n+|(?=\d+[\.\)]\s)|(?=•\s)/)
             .map(s => s.trim())
-            .filter(s => s.length > 10)
-            .forEach(extraerPrecioM2);
-          comparablesData += " | " + res.text.slice(0, 1200);
+            .filter(s => s.length > 10);
+
+          // BLOQUE 9: FILTRO GEOGRAFICO POR CODIGO — el web_search puede traer
+          // resultados de "Quilmes" en general aunque se haya pedido cerca de
+          // una direccion puntual. Si el geocode encontro calles reales cerca
+          // de la propiedad, SOLO se acepta una línea si menciona alguna de
+          // esas calles (o la propia calle de la propiedad). Esto es lo que
+          // realmente evita que el ancla y el texto que ve la IA se
+          // contaminen con comparables de otra subzona — confiar solo en la
+          // instruccion del prompt no alcanza, la IA no siempre la respeta.
+          const geoFiltro = (streetsNearby || []).map(normalizarTexto).filter(Boolean);
+          const calleFiltro = normalizarTexto(calle);
+          const partesFiltradas = geoFiltro.length > 0
+            ? partes.filter(linea => {
+                const l = normalizarTexto(linea);
+                return (calleFiltro && l.includes(calleFiltro)) || geoFiltro.some(c => l.includes(c));
+              })
+            : partes;
+
+          partesFiltradas.forEach(extraerPrecioM2);
+          if (partesFiltradas.length > 0) {
+            comparablesData += " | " + partesFiltradas.join(" | ").slice(0, 1200);
+          }
         }
 
       }
@@ -1544,6 +1574,22 @@ export default function TasaLibre() {
       }
       if (parsed.precio_base_m2_usd === undefined || parsed.precio_base_m2_usd === null) throw new Error("Respuesta invalida de la IA. Keys: " + Object.keys(parsed).join(", "));
       // precio_base_m2_usd === 0 es válido: significa "sin datos suficientes para esta zona"
+
+      // BLOQUE 9: filtro geografico por codigo sobre la lista de comparables
+      // que arma la IA — no alcanza con pedirle por texto que se ciña a la
+      // zona geolocalizada, hay que verificarlo. Si el geocode encontro
+      // calles reales cerca de la propiedad, se descarta cualquier
+      // comparable cuya direccion no mencione ninguna de esas calles ni la
+      // propia calle de la propiedad (no aplica a barrio cerrado, ahi no se
+      // geocodifica y streetsNearby siempre llega vacío).
+      if (!esCerradoSearch && streetsNearby && streetsNearby.length > 0 && Array.isArray(parsed.comparables)) {
+        const geoFiltro = streetsNearby.map(normalizarTexto).filter(Boolean);
+        const calleFiltro = normalizarTexto(calle);
+        parsed.comparables = parsed.comparables.filter(c => {
+          const d = normalizarTexto(c.direccion);
+          return (calleFiltro && d.includes(calleFiltro)) || geoFiltro.some(cl => d.includes(cl));
+        });
+      }
 
       // ── BLOQUE 2: motor determinístico de ajustes estructurales ──────────
       // disposición, ascensor, balcón, hall, estado y acceso de PH ya son
