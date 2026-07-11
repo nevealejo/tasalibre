@@ -684,7 +684,7 @@ export default function TasaLibre() {
   const [dormitorios, setDormitorios] = useState("2");
   const [banos, setBanos] = useState("2");
   const [amenities, setAmenities] = useState([]);
-  const [estado, setEstado] = useState("muy_bueno");
+  const [estado, setEstado] = useState("bueno");
   const [photos, setPhotos] = useState(Array(6).fill(null));
 
   // Contact — solo nombre y whatsapp
@@ -1375,7 +1375,7 @@ export default function TasaLibre() {
             .map(s => s.trim())
             .filter(s => s.length > 10)
             .forEach(extraerPrecioM2);
-          comparablesData += " | " + res.text.slice(0, 400);
+          comparablesData += " | " + res.text.slice(0, 1200);
         }
 
       }
@@ -1431,7 +1431,7 @@ export default function TasaLibre() {
       }
 
       const comparablesCtx = comparablesData
-        ? "COMPARABLES(usa como base):" + comparablesData.slice(0, esCerradoSearch ? 3000 : 800) + anclaCalculadaTxt
+        ? "COMPARABLES(usa como base):" + comparablesData.slice(0, 3000) + anclaCalculadaTxt
         : (sinComparablesBarrioCerrado
             ? "ADVERTENCIA: no se encontraron comparables VERIFICADOS dentro de " + nombreBarrioCompletoWarn + " en esta busqueda. NO inventes precios de memoria. Usa tu conocimiento real del segmento (mismo barrio si tenes datos de otros sectores/complejos, o barrios cerrados de categoria similar en la misma zona) solo como referencia aproximada, ampliando el rango +-15%, y aclaralo en el analisis."
             : "Sin comparables online.");
@@ -1441,7 +1441,7 @@ export default function TasaLibre() {
         comparablesCtx + "\n" +
         (esCerradoSearch && (casaNombreBarrio||nombreBarrioPrivado)
           ? "REGLAS BARRIO CERRADO: 1)REGLA DE ORO: usar SOLO comparables cuyo TITULO de publicacion original mencione explicitamente \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\"" + (sectorBarrio ? " Y TAMBIEN el sector/complejo \"" + sectorBarrio + "\"" : "") + " (los vendedores SIEMPRE ponen el nombre del barrio cerrado en el titulo porque es el argumento de venta; si el titulo no lo nombra, la propiedad NO es del barrio)." + (sectorBarrio ? " 1b)CRITICO SECTOR: el barrio \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\" tiene VARIOS complejos/sectores internos con precios MUY diferentes entre si (a veces 30-50% de diferencia). NUNCA promediar comparables de otro sector distinto a \"" + sectorBarrio + "\" aunque esten dentro del mismo barrio cerrado — son productos distintos." : "") + " 2)PROHIBIDO usar propiedades fuera del perimetro aunque esten geograficamente cerca o en la misma localidad/partido: el m2 dentro del barrio cerrado vale 2-4 veces mas que afuera. 3)Antes de incluir un comparable en el JSON final, releelo: si su titulo NO tiene el nombre del barrio" + (sectorBarrio ? " Y el sector" : "") + ", NO LO INCLUYAS. 4)BASE DE CALCULO: el promedio de precio/m2 (sobre m2 CUBIERTOS) de los comparables con titulo verificado del MISMO TIPO es SIEMPRE la base principal. Un 'precio medio zonal' estadistico que aparezca en el contexto NUNCA es base: solo sirve como verificacion de coherencia (si tu promedio difiere mucho, revisa los comparables, pero decide con las publicaciones reales). 5)TIPO IMPORTA: dentro del mismo barrio cerrado, los DEPARTAMENTOS (especialmente a estrenar o recientes) valen 20-40% MAS por m2 que las casas. Si tasas un departamento y solo hay comparables de casas, ajusta hacia arriba. Si tasas una casa y solo hay deptos, ajusta hacia abajo. 6)SANITY CHECK FINAL: el precio/m2 resultante en un barrio cerrado consolidado NUNCA puede quedar por debajo de 1.5 veces el m2 de la localidad abierta circundante. Si tu calculo da menos, esta MAL: revisalo usando los comparables del barrio. 7)Si hay pocos comparables validos del barrio" + (sectorBarrio ? "/sector" : "") + ", usar barrios cerrados de categoria EQUIVALENTE en la misma zona, NUNCA barrio abierto. 8)Rango+-5%. 9)Si el contexto incluye una 'ANCLA CALCULADA POR CODIGO', esa cifra fue calculada matematicamente por el sistema (no por vos) a partir de los mismos comparables, y es mas confiable que tu propia lectura del texto: tu precio_m2_usd final debe estar dentro de +-20% de esa ancla, salvo justificacion explicita en el analisis.\n"
-          : "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n") +
+          : "REGLAS: 1)BASE DE CALCULO: precio_base_m2_usd es el promedio de precio/m2 (sobre m2 CUBIERTOS) de los comparables reales encontrados en la busqueda para " + address + " y su zona inmediata — NUNCA un valor de memoria, tope regional fijo, ni comparacion con otras zonas (CABA u otras). 2)Priorizar los 6 comparables MAS CERCANOS a " + address + " por sobre cualquier otro. 3)Si el contexto incluye una 'ANCLA CALCULADA POR CODIGO', tu precio_base_m2_usd debe estar dentro de +-20% de esa cifra, salvo justificacion explicita en el analisis. 4)Rango+-5%. 5)CONSERVADOR: ante pocos comparables, preferir un valor mas bajo antes que sobreestimar.\n") +
         (tipo === "lote" && loteSubtipo === "urbano" && loteEntorno === "centrico"
           ? "REGLAS LOTE CENTRICO (edificabilidad): 1)Este lote esta en zona centrica/sobre avenida: su valor lo define el POTENCIAL CONSTRUCTIVO, no el m2 residencial. 2)BASE: usar comparables marcados [DESARROLLO] o que mencionen 'apto edificio/desarrollo/emprendimiento' o zonificacion (R2, R3, C, FOT); los [RESIDENCIAL] solo sirven como PISO minimo. 3)Si los comparables traen zonificacion/FOT, mencionalos en el analisis. 4)SANITY CHECK: un lote centrico NUNCA vale menos por m2 que el promedio de lotes residenciales de la misma localidad; si tu calculo da menos, esta MAL. 5)Si no hay comparables apto desarrollo en el contexto, usa los residenciales como piso y aplica un premium de zona centrica de +30-60% segun cuan comercial sea la ubicacion, aclarandolo en el analisis. 6)En el campo analisis, aclarar SIEMPRE que el valor definitivo de un lote centrico depende de la zonificacion municipal (FOS/FOT) y recomendar verificarla en el municipio antes de decidir.\n"
           : "") +
@@ -1453,6 +1453,7 @@ export default function TasaLibre() {
         "REGLAS CRITICAS:\n" +
         "REGLA - DEMOLICION: si hay riesgo de derrumbe, comparar con terrenos de la zona, no con propiedades.\n" +
         "REGLA - ORIENTACION Y COCHERA: son solo informativas para el campo 'analisis' (mencionalas si son relevantes), no cambian 'precio_base_m2_usd' — los comparables ya vienen filtrados por cochera y la orientacion no tiene ajuste numerico.\n" +
+        "REGLA - NO REVELAR MECANISMOS INTERNOS: el campo 'analisis' lo lee directamente el propietario de la propiedad. Nunca menciones ahi palabras como 'ancla', 'sistema', 'codigo', 'clamp', 'techo', 'tope maximo/minimo', ni el hecho de que un valor fue verificado, limitado o corregido automaticamente. Redacta el analisis en lenguaje natural, como si vos hubieras hecho todo el razonamiento de mercado de punta a punta.\n" +
         "\n" +
         "CLASIFICACION (categorias para el sistema — a partir de las fotos; NO calcules ningun porcentaje, solo elegi la categoria):\n" +
         "cocina: \"renovada\" (a nuevo) / \"normal\" / \"a_renovar\".\n" +
@@ -1644,7 +1645,7 @@ export default function TasaLibre() {
     setScreen("hero"); setStep(1); setResult(null);
     setPhotos(Array(6).fill(null)); setNombre(""); setWhatsapp("");
     setBarrio(""); setCalle(""); setNumero(""); setSupTotal(""); setSupCub(""); setAntiguedad("");
-    setAmenities([]); setEstado("muy_bueno"); setApiError(""); setDisposicion("");
+    setAmenities([]); setEstado("bueno"); setApiError(""); setDisposicion("");
     setCasaSubtipo(""); setCasaNombreBarrio(""); setDeptoSubtipo(""); setSectorBarrio(""); setLoteSubtipo(""); setNombreBarrioPrivado("");
     setZonificacion(""); setLoteAdicionales([]); setLoteFondo(""); setLoteFrente(""); setLoteConEdificacion(false);
     setPiso(""); setAscensor(false); setPhUbicacion(""); setPhAlFrente(false); setPhPasillo(false); setPhEscalera(""); setPhAccesoEstado(""); setRawDebug("");
