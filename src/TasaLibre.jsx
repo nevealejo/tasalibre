@@ -1311,7 +1311,14 @@ export default function TasaLibre() {
           body: JSON.stringify({
             model: "claude-sonnet-4-6",
             max_tokens: esCerradoSearch ? 700 : 400,
-            tools: [{ type: "web_search_20250305", name: "web_search" }],
+            // BLOQUE 10: max_uses acota cuántas búsquedas puede hacer el modelo
+            // DENTRO de este mismo turno. Sin este límite, el modelo puede
+            // reintentar indefinidamente si no encuentra resultados que
+            // satisfagan las reglas (ej: "descartar sin precio", "critico
+            // zona") — eso es lo que disparó 31 búsquedas y ~1.1M tokens de
+            // entrada en una sola tasación. 4 alcanza para encontrar
+            // comparables reales sin dejar la búsqueda sin techo.
+            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
             messages: [{ role: "user", content: searchPrompt }],
           })
         })
