@@ -446,6 +446,226 @@ const LOGO_NAV_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAYA
 
 const LOGO_SRC = "data:image/png;base64,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";
 
+// ── Validación de celular argentino ─────────────────────────────────────────
+// Normaliza el número a "característica + número" (10 dígitos, ej: 1155551234).
+// Acepta formatos con +54, 549, 0 inicial, espacios, guiones y paréntesis.
+// Devuelve el número normalizado o null si es inválido.
+// Característica válida: 11 (AMBA) o 2xx/3xx (interior del país).
+function normalizarCelularAR(raw) {
+  let d = (raw || "").replace(/\D/g, "");
+  if (d.startsWith("549")) d = d.slice(3);
+  else if (d.startsWith("54") && d.length >= 12) d = d.slice(2);
+  if (d.startsWith("0")) d = d.slice(1);
+  if (d.length !== 10) return null;
+  if (!/^(11|2\d|3\d)/.test(d)) return null;
+  return d;
+}
+// Mensaje de error específico según el problema detectado
+function errorCelularAR(raw) {
+  let d = (raw || "").replace(/\D/g, "");
+  if (d.startsWith("549")) d = d.slice(3);
+  else if (d.startsWith("54") && d.length >= 12) d = d.slice(2);
+  if (d.startsWith("0")) d = d.slice(1);
+  if (d.startsWith("15")) return "Ingresá el número con código de área y sin el 15 (ej: 11 5555 1234).";
+  if (d.length < 10) return "El número está incompleto. Ingresalo con código de área (ej: 11 5555 1234).";
+  if (d.length > 10) return "El número tiene dígitos de más. Ingresalo sin 0 y sin 15 (ej: 11 5555 1234).";
+  if (!/^(11|2\d|3\d)/.test(d)) return "El código de área no parece válido. Revisá el número (ej: 11 5555 1234).";
+  return "";
+}
+
+// ── BLOQUE 1: normalización de moneda — la hace el código, no la IA ────────
+// Todo precio pasa por acá ANTES de sumarse a cualquier promedio, mediana o
+// ancla. Sin esto, un alquiler de USD 600 y uno de ARS 1.500.000 se
+// promediarían como si fueran la misma unidad.
+function normalizarAUsd(precio, moneda, dolarBlueRate) {
+  if (!precio) return null;
+  const m = (moneda || "").toLowerCase();
+  if (m === "usd" || m === "dolares" || m === "u$s") return precio;
+  if (!dolarBlueRate) return null; // sin cotización, no normalizamos a ciegas
+  return Math.round(precio / dolarBlueRate);
+}
+
+// ── BLOQUE 2: motor determinístico de ajustes estructurales ────────────────
+// disposición, ascensor, balcón, hall, estado y acceso de PH ya son datos
+// conocidos del formulario (los eligió el usuario en el wizard) — no hace
+// falta que la IA los adivine ni que sume los porcentajes. Cocina/baños/
+// luminosidad sí requieren fotos, pero la IA solo clasifica (categoría),
+// nunca calcula el %.
+const AJUSTES = {
+  disposicion: { frente: 0, lateral: -0.05, contrafrente: -0.10, interno: -0.12 },
+  ascensor: { con: 0, sin_bajo: -0.05, sin_alto: -0.10 }, // sin_bajo = hasta 2do piso
+  balcon: { si: 0.05, no: 0 },
+  hall: { moderno: 0.03, bueno: 0, antiguo: -0.02, deteriorado: -0.05 },
+  estado: {
+    a_estrenar: 0.08, refaccionado: 0.08, muy_bueno: 0.04,
+    bueno: 0, a_reciclar: -0.08, muy_deteriorado: -0.15,
+  },
+  cocina: { renovada: 0.05, normal: 0, a_renovar: -0.05 },
+  banos: { renovados: 0.05, normal: 0, a_renovar: -0.05 },
+  luminosidad: { superior: 0.03, normal: 0, inferior: -0.03 },
+};
+const TECHO_AJUSTE = { max: 0.15, min: -0.20 };
+const BONUS_LOTE_A_LAGUNA = 0.10; // se aplica DESPUÉS del techo, a propósito
+
+function ajustePhAcceso({ alFrente, pasillo, escalera, accesoDeteriorado }) {
+  let pct = 0;
+  if (alFrente) pct = 0;
+  else if (pasillo && escalera === "piso2plus") pct = -0.20;
+  else if (pasillo && escalera === "piso1") pct = -0.15;
+  else if (escalera === "piso2plus") pct = -0.10;
+  else if (escalera === "piso1") pct = -0.05;
+  else if (pasillo) pct = -0.10;
+  if (accesoDeteriorado) pct -= 0.05;
+  return pct;
+}
+
+function calcularAjusteEstructural(input) {
+  const detalle = [];
+  const add = (factor, pct) => { if (pct) detalle.push({ factor, pct }); return pct; };
+  let total = 0;
+  if (input.disposicion) total += add("disposicion", AJUSTES.disposicion[input.disposicion] ?? 0);
+  if (input.ascensor !== undefined) {
+    const pct = input.ascensor ? AJUSTES.ascensor.con
+      : input.pisoBajo ? AJUSTES.ascensor.sin_bajo : AJUSTES.ascensor.sin_alto;
+    total += add("ascensor", pct);
+  }
+  if (input.balcon !== undefined) total += add("balcon", input.balcon ? AJUSTES.balcon.si : AJUSTES.balcon.no);
+  if (input.hall) total += add("hall", AJUSTES.hall[input.hall] ?? 0);
+  if (input.estado) total += add("estado", AJUSTES.estado[input.estado] ?? 0);
+  if (input.phAcceso) total += add("ph_acceso", ajustePhAcceso(input.phAcceso));
+  return { pctEstructural: total, detalle };
+}
+
+function calcularAjusteSecundario(clasificacion) {
+  const { cocina, banos, luminosidad } = clasificacion || {};
+  const detalle = [];
+  const add = (factor, pct) => { if (pct) detalle.push({ factor, pct }); return pct; };
+  let total = 0;
+  if (cocina) total += add("cocina", AJUSTES.cocina[cocina] ?? 0);
+  if (banos) total += add("banos", AJUSTES.banos[banos] ?? 0);
+  if (luminosidad) total += add("luminosidad", AJUSTES.luminosidad[luminosidad] ?? 0);
+  return { pctSecundario: total, detalle };
+}
+
+function combinarAjustes({ pctEstructural = 0, pctSecundario = 0, loteALaguna = false }) {
+  const pctCrudo = pctEstructural + pctSecundario;
+  const pctFinal = Math.min(TECHO_AJUSTE.max, Math.max(TECHO_AJUSTE.min, pctCrudo));
+  let factorFinal = 1 + pctFinal;
+  if (loteALaguna) factorFinal *= 1 + BONUS_LOTE_A_LAGUNA;
+  return { pctFinal, factorFinal, techoAplicado: pctCrudo !== pctFinal };
+}
+
+// ── BLOQUE 3: blindaje del precio final contra el ancla calculada por
+// código. Antes esto solo se le PEDÍA a la IA por texto ("no te alejes más
+// de ±20%"); acá se VERIFICA y se corrige si hace falta. ──────────────────
+function clampearContraAncla(precioM2IA, anclaCalculada, tolerancia = 0.20) {
+  if (!anclaCalculada || !precioM2IA) {
+    return { precioM2Final: precioM2IA, corregido: false, anclaCalculada: anclaCalculada || null };
+  }
+  const min = anclaCalculada * (1 - tolerancia);
+  const max = anclaCalculada * (1 + tolerancia);
+  if (precioM2IA < min || precioM2IA > max) {
+    return { precioM2Final: Math.min(max, Math.max(min, precioM2IA)), corregido: true, anclaCalculada };
+  }
+  return { precioM2Final: precioM2IA, corregido: false, anclaCalculada };
+}
+
+// ── BLOQUE 6: los "factores" que ve el usuario se arman a partir de los
+// mismos ajustes que se usaron para calcular el precio — no de una
+// redacción aparte de la IA que podría no coincidir con el número real. ───
+const TEXTOS_FACTOR = {
+  disposicion: {
+    "-0.05": { titulo: "Disposición lateral", desc: "impacta algo la luminosidad respecto al frente" },
+    "-0.1": { titulo: "Disposición contrafrente", desc: "menor luminosidad y más ruido interno que el frente" },
+    "-0.12": { titulo: "Disposición interna", desc: "sin vista directa a la calle, reduce el valor respecto al frente" },
+  },
+  ascensor: {
+    "-0.05": { titulo: "Sin ascensor (piso bajo)", desc: "hasta 2do piso, impacto moderado" },
+    "-0.1": { titulo: "Sin ascensor (piso alto)", desc: "3er piso o más sin ascensor" },
+  },
+  balcon: { "0.05": { titulo: "Con balcón", desc: "suma valor respecto a unidades sin balcón" } },
+  hall: {
+    "0.03": { titulo: "Hall moderno", desc: "palier renovado, suma valor" },
+    "-0.02": { titulo: "Hall antiguo", desc: "prolijo pero sin renovar" },
+    "-0.05": { titulo: "Hall deteriorado", desc: "impacta la primera impresión del edificio" },
+  },
+  estado: {
+    "0.08": { titulo: "Estado muy por encima del promedio", desc: "a estrenar o refaccionado a nuevo" },
+    "0.04": { titulo: "Estado muy bueno", desc: "por encima del promedio de la zona" },
+    "-0.08": { titulo: "Requiere refacción", desc: "por debajo del promedio de la zona" },
+    "-0.15": { titulo: "Muy deteriorado", desc: "con problemas estructurales" },
+  },
+  cocina: {
+    "0.05": { titulo: "Cocina renovada", desc: "a nuevo, suma valor" },
+    "-0.05": { titulo: "Cocina a renovar", desc: "resta valor respecto al promedio" },
+  },
+  banos: {
+    "0.05": { titulo: "Baños renovados", desc: "a nuevo, suman valor" },
+    "-0.05": { titulo: "Baños a renovar", desc: "restan valor respecto al promedio" },
+  },
+  luminosidad: {
+    "0.03": { titulo: "Luminosidad superior", desc: "muy por encima del promedio de la zona" },
+    "-0.03": { titulo: "Luminosidad inferior", desc: "muy por debajo del promedio de la zona" },
+  },
+};
+
+function generarFactores(detalleCompleto) {
+  const factores = (detalleCompleto || []).map(({ factor, pct }) => {
+    if (factor === "ph_acceso") {
+      return {
+        tipo: pct > 0 ? "pos" : pct < 0 ? "neg" : "neu",
+        titulo: "Acceso del PH",
+        descripcion: "ajuste por tipo de acceso (frente, pasillo o escalera)",
+        impacto: (pct > 0 ? "+" : "") + Math.round(pct * 100) + "%",
+      };
+    }
+    const info = (TEXTOS_FACTOR[factor] || {})[String(pct)];
+    return {
+      tipo: pct > 0 ? "pos" : pct < 0 ? "neg" : "neu",
+      titulo: (info && info.titulo) || factor,
+      descripcion: (info && info.desc) || "",
+      impacto: (pct > 0 ? "+" : "") + Math.round(pct * 100) + "%",
+    };
+  });
+  if (factores.length === 0) {
+    factores.push({ tipo: "neu", titulo: "Zona", descripcion: "precio en línea con el promedio de la zona", impacto: "Neutro" });
+  }
+  return factores;
+}
+
+// ── BLOQUE 4: índice de confianza — 100% determinístico, nunca se le
+// pregunta a la IA. ────────────────────────────────────────────────────────
+function calcularConfianza({
+  comparablesEncontrados = 0,
+  hayAncla = false,
+  seAlejoDelAncla = false,
+  camposFaltantes = 0,
+  busquedasFallidas = 0,
+  esFallbackSinComparables = false,
+}) {
+  let score = 100;
+  if (esFallbackSinComparables) score -= 35;
+  if (!hayAncla) score -= 25;
+  if (comparablesEncontrados < 3) score -= 15;
+  if (seAlejoDelAncla) score -= 20;
+  score -= Math.min(15, camposFaltantes * 3);
+  score -= Math.min(15, busquedasFallidas * 8);
+  score = Math.max(0, Math.min(100, score));
+  const nivel = score >= 75 ? "alta" : score >= 50 ? "media" : "baja";
+  return { score, nivel };
+}
+
+// ── BLOQUE 5: calibración empírica — ajusta la confianza según el error
+// histórico real de correcciones para ese mismo bucket. Sin historial
+// todavía => no toca nada (neutral). ───────────────────────────────────────
+function calibrarConfianzaConHistorico(confianzaBase, errorPromedioHistoricoBucket) {
+  if (errorPromedioHistoricoBucket == null) return confianzaBase;
+  const penalizacion = Math.round(errorPromedioHistoricoBucket * 100);
+  const score = Math.max(0, Math.min(100, confianzaBase.score - penalizacion));
+  const nivel = score >= 75 ? "alta" : score >= 50 ? "media" : "baja";
+  return { score, nivel };
+}
+
 export default function TasaLibre() {
   const [screen, setScreen] = useState("hero"); // hero | wizard | contact | loading | result | admin-login | admin
   const [step, setStep] = useState(1);
@@ -470,6 +690,7 @@ export default function TasaLibre() {
   // Contact — solo nombre y whatsapp
   const [nombre, setNombre] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
+  const [errWhatsapp, setErrWhatsapp] = useState("");
 
   // Casa extras
   const [casaSubtipo, setCasaSubtipo] = useState(""); // "tradicional" | "cerrado"
@@ -498,6 +719,7 @@ export default function TasaLibre() {
 
   // Lote extras
   const [loteSubtipo, setLoteSubtipo] = useState(""); // "cerrado" | "urbano"
+  const [loteEntorno, setLoteEntorno] = useState("residencial"); // "residencial" | "centrico" — solo lote urbano
   const [barrioPrivado, setBarrioPrivado] = useState(false);
   const [nombreBarrioPrivado, setNombreBarrioPrivado] = useState("");
   const [zonificacion, setZonificacion] = useState("");
@@ -563,6 +785,24 @@ export default function TasaLibre() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status })
       });
+    } catch(e) {}
+  };
+
+  // ── BLOQUE 5: loop de calibración — loguea la corrección manual de un
+  // asesor (valor real de venta cerrada, o ajuste tras revisión) para poder
+  // medir con el tiempo qué tan bien tasa el sistema por zona/tipo.
+  const [correctionDrafts, setCorrectionDrafts] = useState({});
+  const [correctionSaved, setCorrectionSaved] = useState({});
+  const submitCorrection = async (id) => {
+    const valorCorregido = Number(correctionDrafts[id]);
+    if (!valorCorregido || valorCorregido <= 0) return;
+    try {
+      await fetch("/api/leads", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, valorCorregido })
+      });
+      setCorrectionSaved(prev => ({ ...prev, [id]: true }));
     } catch(e) {}
   };
 
@@ -896,6 +1136,13 @@ export default function TasaLibre() {
           ];
         }
         if (tipo === "lote" && loteSubtipo === "urbano") {
+          if (loteEntorno === "centrico") {
+            return [
+              "lote apto edificio " + barrio + " " + provincia + " " + op + " precio " + monedaShort,
+              "terreno apto desarrollo emprendimiento " + barrio + " centro " + provincia + " " + monedaShort,
+              "lote " + op + " " + calleRef + barrio + " zonificacion FOT " + monedaShort + " mercadolibre inmuebles",
+            ];
+          }
           return [
             "lote " + op + " " + calleRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
             "terreno " + op + " " + barrio + " " + provincia + " " + supRef + "precio " + monedaShort + " argenprop",
@@ -962,7 +1209,6 @@ export default function TasaLibre() {
 
       const queries = buildQueries();
       let comparablesData = "";
-      let streetContext = "";
       let dolarBlue = 0;
 
       // Cotización dólar blue en tiempo real
@@ -972,49 +1218,39 @@ export default function TasaLibre() {
         dolarBlue = dolarData.venta || dolarData.compra || 0;
       } catch(e) { console.warn("No se pudo obtener cotización dólar:", e.message); }
 
-      // Geocodificar UNA SOLA VEZ antes del loop (NO en barrio cerrado: las calles cercanas inducen comparables externos)
       const esCerradoSearch = casaSubtipo === "cerrado" || deptoSubtipo === "cerrado" || loteSubtipo === "cerrado";
-      if (!esCerradoSearch) try {
-        const geoRes = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=ar`,
-          { headers: { "User-Agent": "TasaLibre/1.0" } }
-        );
-        const geoData = await geoRes.json();
-        if (geoData.length) {
-          const { lat, lon } = geoData[0];
-          // Overpass para calles cercanas
-          const ovQuery = `[out:json][timeout:5];way(around:500,${lat},${lon})["highway"]["name"];out tags;`;
-          const ovRes = await fetch("https://overpass-api.de/api/interpreter", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: `data=${encodeURIComponent(ovQuery)}`
-          });
-          const ovData = await ovRes.json();
-          const seen = new Set();
-          const streets = [];
-          for (const el of ovData.elements || []) {
-            const name = el.tags?.name;
-            if (name && !seen.has(name)) { seen.add(name); streets.push(name); }
-          }
-          if (streets.length < 3) {
-            // Ampliar a 1000m
-            const ovQuery2 = `[out:json][timeout:5];way(around:1000,${lat},${lon})["highway"]["name"];out tags;`;
-            const ovRes2 = await fetch("https://overpass-api.de/api/interpreter", {
-              method: "POST",
-              headers: { "Content-Type": "application/x-www-form-urlencoded" },
-              body: `data=${encodeURIComponent(ovQuery2)}`
-            });
-            const ovData2 = await ovRes2.json();
-            for (const el of ovData2.elements || []) {
-              const name = el.tags?.name;
-              if (name && !seen.has(name)) { seen.add(name); streets.push(name); }
-            }
-          }
-          if (streets.length > 0) {
-            streetContext = `Buscar SOLO en estas calles cercanas: ${streets.slice(0,6).join(", ")}. `;
-          }
-        }
-      } catch(e) { console.warn("Geocoding failed:", e.message); }
+      const nombreBarrioCerradoEnrich = (casaNombreBarrio || nombreBarrioPrivado || "") + (sectorBarrio ? " " + sectorBarrio : "");
+      const esLoteCentricoEnrich = tipo === "lote" && loteSubtipo === "urbano" && loteEntorno === "centrico";
+
+      // ── BLOQUE 8: UNA sola llamada de enriquecimiento (geocode+Overpass+
+      // estación+Tokko) antes de las 3 búsquedas en paralelo — antes esto se
+      // repetía 3 veces (una por cada búsqueda) con el mismo resultado. No
+      // manda coordenadas en barrio cerrado (address:"" — las calles
+      // cercanas inducirían comparables externos al perímetro), pero Tokko
+      // sí corre siempre: identifica por nombre de barrio, no por coordenadas.
+      let streetContext = "";
+      let tokkoContext = "";
+      let tokkoComps = [];
+      try {
+        const enrichRes = await fetch("/api/tasar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            _enrichOnly: true,
+            _meta: {
+              address: esCerradoSearch ? "" : address, tipo, operacion,
+              barrio: esCerradoSearch ? nombreBarrioCerradoEnrich : barrio,
+              esCerrado: esCerradoSearch, loteCentrico: esLoteCentricoEnrich,
+              supTotal, conCochera: amenities.includes("Cochera"),
+            },
+          }),
+        });
+        const enrichData = await enrichRes.json();
+        streetContext = enrichData.streetContext || "";
+        tokkoContext = enrichData.tokkoContext || "";
+        tokkoComps = enrichData.tokkoComps || [];
+      } catch(e) { console.warn("Enriquecimiento falló:", e.message); }
 
       setLoadStep(2);
       const precioLabel = operacion === "alquiler" ? "precio alquiler mensual (en dolares o pesos)" : "precio venta en dolares";
@@ -1023,6 +1259,10 @@ export default function TasaLibre() {
       // Las 3 búsquedas EN PARALELO — ahorra 60-90 segundos
       const searchPromises = queries.map(q => {
         const nombreBarrioCerrado = (casaNombreBarrio || nombreBarrioPrivado || "") + (sectorBarrio ? " " + sectorBarrio : "");
+        const esLoteCentrico = tipo === "lote" && loteSubtipo === "urbano" && loteEntorno === "centrico";
+        const loteCentricoContext = esLoteCentrico
+          ? "CRITICO LOTE CENTRICO: el lote a tasar esta en zona centrica/sobre avenida, donde el valor lo define la EDIFICABILIDAD (potencial de construccion), no el m2 residencial. Prioriza publicaciones de lotes 'apto edificio', 'apto desarrollo', 'ideal emprendimiento' de la misma localidad. IMPORTANTE: si el aviso menciona zonificacion (R2, R3, C1...), FOT, FOS o m2 construibles, COPIA ese dato textual en la misma linea del comparable — es el dato mas valioso. Si encontras lotes residenciales comunes ademas de los aptos desarrollo, incluí ambos pero marca cada linea con [DESARROLLO] o [RESIDENCIAL] al inicio. "
+          : "";
         const bcContext = esCerradoSearch && nombreBarrioCerrado
           ? "CRITICO BARRIO CERRADO: buscar publicaciones (prioridad: MercadoLibre inmuebles) de propiedades DENTRO de \"" + nombreBarrioCerrado + "\"" + (sectorBarrio ? " (el barrio privado es \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\" y DENTRO de este barrio hay varios complejos/sectores distintos con precios MUY diferentes entre si — el que importa aca es especificamente el sector \"" + sectorBarrio + "\", NO otros sectores del mismo barrio)" : "") + ". REGLA DE ORO: incluir una publicacion SOLO si su TITULO menciona explicitamente \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\"" + (sectorBarrio ? " Y TAMBIEN \"" + sectorBarrio + "\"" : "") + " (ej: 'Casa en venta en " + nombreBarrioCerrado + "...'). Si el titulo NO nombra " + (sectorBarrio ? "AMBOS terminos" : "el barrio") + ", DESCARTARLA aunque la ubicacion o descripcion parezcan coincidir o este geograficamente cerca. NO uses paginas de estadisticas ni promedios zonales: solo publicaciones individuales con titulo verificado. CRITICO PRECIO: copia el precio EXACTAMENTE como aparece en el resultado de busqueda junto al titulo/superficie de ESA publicacion especifica (ej si dice 'US$269.000' escribi exactamente USD 269000, no redondees ni calcules). NUNCA uses precios de cocheras sueltas, expensas, cuotas de financiacion, ni precios de OTRA publicacion que aparezca cerca en el mismo resultado de busqueda — cada precio debe corresponder inequivocamente a la publicacion cuyo titulo estas citando. Si no podes identificar con certeza qué precio corresponde a qué publicacion, DESCARTA esa linea entera. "
           : "";
@@ -1030,7 +1270,10 @@ export default function TasaLibre() {
         const formatoEstricto = esCerradoSearch && nombreBarrioCerrado
           ? ` FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea así (todo en la misma línea, sin párrafos, separando cada campo con el caracter " | "): ${nombreBarrioCerrado} | "[título textual de la publicación]" | [dirección] | [${precioLabel} EXACTO tal cual aparece en la fuente] | [${m2Label}]. No agregues texto introductorio ni explicativo. Si una publicación no tiene el nombre del barrio en su título, NO la incluyas como línea. Si tenés dudas de qué precio corresponde a esa publicación puntual, NO la incluyas.` + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "")
           : " FORMATO OBLIGATORIO: respondé UNA propiedad por línea, cada línea con TODOS los datos juntos, separando cada campo con el caracter \" | \" así: [direccion] | [" + precioLabel + "] | [" + m2Label + "]. No agregues texto introductorio ni explicativo, no agrupes propiedades en un mismo párrafo." + (tipo === "casa" ? " CRITICO: si la publicacion menciona superficie de LOTE/TERRENO y superficie CUBIERTA/construida por separado, usa SIEMPRE la cubierta, nunca el lote." : "");
-        const searchPrompt = bcContext + streetContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + formatoEstricto + " Para el campo fuente usa siempre: Relevamiento de mercado.";
+        // BLOQUE 8: streetContext y tokkoContext ya se resolvieron UNA vez en
+        // la llamada de enriquecimiento de arriba — antes tasar.js los volvía
+        // a calcular por cada una de estas 3 búsquedas.
+        const searchPrompt = tokkoContext + streetContext + bcContext + loteCentricoContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + formatoEstricto + " Para el campo fuente usa siempre: Relevamiento de mercado.";
         return fetch("/api/tasar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1040,7 +1283,6 @@ export default function TasaLibre() {
             max_tokens: esCerradoSearch ? 700 : 400,
             tools: [{ type: "web_search_20250305", name: "web_search" }],
             messages: [{ role: "user", content: searchPrompt }],
-            _meta: { address: esCerradoSearch ? "" : address, tipo, operacion, barrio: esCerradoSearch ? nombreBarrioCerrado : barrio, esCerrado: esCerradoSearch, supTotal, conCochera: amenities.includes("Cochera") }
           })
         })
         .then(r => r.text())
@@ -1061,17 +1303,38 @@ export default function TasaLibre() {
       // calcule bien el precio/m2 a partir del texto — lo calculamos nosotros mismos
       // de cada línea ya filtrada, así hay un ancla numérica verificable por código.
       const preciosM2Calculados = [];
+      // BLOQUE 1: detecta USD **o** ARS en la línea y normaliza SIEMPRE a
+      // dólares con normalizarAUsd() antes de calcular precio/m² — así un
+      // alquiler en pesos y uno en dólares nunca se mezclan en la misma
+      // cuenta. Antes, esto solo detectaba USD y descartaba silenciosamente
+      // cualquier comparable en pesos (perdiendo datos reales de alquileres).
       const extraerPrecioM2 = (linea) => {
-        const mPrecio = linea.match(/USD\s*\$?\s*([\d][\d.,]{2,})/i) || linea.match(/US\$\s*([\d][\d.,]{2,})/i);
+        const mUsd = linea.match(/USD\s*\$?\s*([\d][\d.,]{2,})/i) || linea.match(/US\$\s*([\d][\d.,]{2,})/i);
+        const mArs = !mUsd && linea.match(/(?:ARS|AR\$)\s*([\d][\d.,]{2,})/i);
+        const mPesoSuelto = !mUsd && !mArs && linea.match(/\$\s*([\d]{1,3}(?:[.,]\d{3}){2,})/); // $ seguido de un número grande (miles de pesos)
         const mM2 = linea.match(/(\d+(?:[.,]\d+)?)\s*m2/i);
-        if (!mPrecio || !mM2) return;
-        const precio = parseInt(mPrecio[1].replace(/[^\d]/g, ""), 10);
+        if ((!mUsd && !mArs && !mPesoSuelto) || !mM2) return;
+
+        const moneda = mUsd ? "usd" : "ars";
+        const precioRaw = parseInt((mUsd ? mUsd[1] : mArs ? mArs[1] : mPesoSuelto[1]).replace(/[^\d]/g, ""), 10);
+        const precio = normalizarAUsd(precioRaw, moneda, dolarBlue);
         const m2 = parseFloat(mM2[1].replace(",", "."));
-        if (precio > 5000 && m2 > 10 && m2 < 2000) {
+        if (precio && precio > 5000 && m2 > 10 && m2 < 2000) {
           const pm2 = Math.round(precio / m2);
           if (pm2 > 200 && pm2 < 20000) preciosM2Calculados.push(pm2);
         }
       };
+
+      // ── BLOQUE 7: los comparables de Tokko ya vienen estructurados (de una
+      // API real, no de texto scrapeado) — se suman directo al ancla acá,
+      // sin depender de que la IA los relea y los retranscriba bien.
+      for (const c of tokkoComps) {
+        const precioUsd = normalizarAUsd(c.precio_usd, c.moneda, dolarBlue);
+        if (precioUsd && c.m2 > 0) {
+          const pm2 = Math.round(precioUsd / c.m2);
+          if (pm2 > 200 && pm2 < 20000) preciosM2Calculados.push(pm2);
+        }
+      }
 
       for (const res of searchResults) {
         if (res.error) { searchErrors.push(res.error); continue; }
@@ -1104,6 +1367,14 @@ export default function TasaLibre() {
           // Si NINGUNA línea menciona el barrio (y el sector si corresponde), se descarta todo el bloque
 
         } else {
+          // BLOQUE 3: antes esta rama (mercado abierto) nunca alimentaba
+          // preciosM2Calculados — el ancla solo existía para barrio cerrado.
+          // Ahora se extraen los mismos precio/m2 verificados por código acá.
+          res.text
+            .split(/\n+|(?=\d+[\.\)]\s)|(?=•\s)/)
+            .map(s => s.trim())
+            .filter(s => s.length > 10)
+            .forEach(extraerPrecioM2);
           comparablesData += " | " + res.text.slice(0, 400);
         }
 
@@ -1143,15 +1414,20 @@ export default function TasaLibre() {
       const sinComparablesBarrioCerrado = esCerradoSearch && nombreBarrioFiltro && !comparablesData.trim();
       const nombreBarrioCompletoWarn = nombreBarrioFiltro + (sectorFiltro ? " (sector " + sectorFiltro + ")" : "");
 
-      // Ancla numérica verificada por código: mediana de precio/m2 calculado por NOSOTROS
-      // (no por la IA) a partir de las líneas ya filtradas por barrio+sector.
+      // Ancla numérica verificada por código: mediana de precio/m2 calculado por
+      // NOSOTROS (no por la IA). BLOQUE 3: ya no se limita a barrio cerrado —
+      // corre para cualquier tipo de propiedad que tenga comparables válidos, y
+      // se guarda en `anclaNumerica` para clampear el resultado final más abajo.
       let anclaCalculadaTxt = "";
-      if (esCerradoSearch && preciosM2Calculados.length > 0) {
+      let anclaNumerica = null;
+      if (preciosM2Calculados.length > 0) {
         const ordenados = [...preciosM2Calculados].sort((a, b) => a - b);
         const mediana = ordenados.length % 2 === 0
           ? Math.round((ordenados[ordenados.length/2 - 1] + ordenados[ordenados.length/2]) / 2)
           : ordenados[Math.floor(ordenados.length/2)];
-        anclaCalculadaTxt = " ANCLA CALCULADA POR CODIGO (verificada, no confies en tu propia aritmetica sobre el texto): mediana de precio/m2 de " + ordenados.length + " comparable(s) validos de " + nombreBarrioCompletoWarn + " = USD " + mediana.toLocaleString("es-AR") + "/m2 (valores individuales: " + ordenados.map(v=>"USD "+v.toLocaleString("es-AR")).join(", ") + "). Tu precio_m2_usd final NO puede alejarse mas de +-20% de esta ancla salvo que justifiques explicitamente por que (ej: muy pocos comparables, o el inmueble tasado difiere mucho en categoria). Si tu calculo final se aleja mas de eso, revisalo.";
+        anclaNumerica = mediana;
+        const zonaTxt = nombreBarrioCompletoWarn || barrio;
+        anclaCalculadaTxt = " ANCLA CALCULADA POR CODIGO (verificada, no confies en tu propia aritmetica sobre el texto): mediana de precio/m2 de " + ordenados.length + " comparable(s) validos de " + zonaTxt + " = USD " + mediana.toLocaleString("es-AR") + "/m2 (valores individuales: " + ordenados.map(v=>"USD "+v.toLocaleString("es-AR")).join(", ") + "). Tu precio_base_m2_usd deberia estar cerca de esta ancla salvo que justifiques explicitamente por que (ej: muy pocos comparables, o el inmueble tasado difiere mucho en categoria) — el sistema va a verificarlo en codigo despues.";
       }
 
       const comparablesCtx = comparablesData
@@ -1166,44 +1442,28 @@ export default function TasaLibre() {
         (esCerradoSearch && (casaNombreBarrio||nombreBarrioPrivado)
           ? "REGLAS BARRIO CERRADO: 1)REGLA DE ORO: usar SOLO comparables cuyo TITULO de publicacion original mencione explicitamente \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\"" + (sectorBarrio ? " Y TAMBIEN el sector/complejo \"" + sectorBarrio + "\"" : "") + " (los vendedores SIEMPRE ponen el nombre del barrio cerrado en el titulo porque es el argumento de venta; si el titulo no lo nombra, la propiedad NO es del barrio)." + (sectorBarrio ? " 1b)CRITICO SECTOR: el barrio \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\" tiene VARIOS complejos/sectores internos con precios MUY diferentes entre si (a veces 30-50% de diferencia). NUNCA promediar comparables de otro sector distinto a \"" + sectorBarrio + "\" aunque esten dentro del mismo barrio cerrado — son productos distintos." : "") + " 2)PROHIBIDO usar propiedades fuera del perimetro aunque esten geograficamente cerca o en la misma localidad/partido: el m2 dentro del barrio cerrado vale 2-4 veces mas que afuera. 3)Antes de incluir un comparable en el JSON final, releelo: si su titulo NO tiene el nombre del barrio" + (sectorBarrio ? " Y el sector" : "") + ", NO LO INCLUYAS. 4)BASE DE CALCULO: el promedio de precio/m2 (sobre m2 CUBIERTOS) de los comparables con titulo verificado del MISMO TIPO es SIEMPRE la base principal. Un 'precio medio zonal' estadistico que aparezca en el contexto NUNCA es base: solo sirve como verificacion de coherencia (si tu promedio difiere mucho, revisa los comparables, pero decide con las publicaciones reales). 5)TIPO IMPORTA: dentro del mismo barrio cerrado, los DEPARTAMENTOS (especialmente a estrenar o recientes) valen 20-40% MAS por m2 que las casas. Si tasas un departamento y solo hay comparables de casas, ajusta hacia arriba. Si tasas una casa y solo hay deptos, ajusta hacia abajo. 6)SANITY CHECK FINAL: el precio/m2 resultante en un barrio cerrado consolidado NUNCA puede quedar por debajo de 1.5 veces el m2 de la localidad abierta circundante. Si tu calculo da menos, esta MAL: revisalo usando los comparables del barrio. 7)Si hay pocos comparables validos del barrio" + (sectorBarrio ? "/sector" : "") + ", usar barrios cerrados de categoria EQUIVALENTE en la misma zona, NUNCA barrio abierto. 8)Rango+-5%. 9)Si el contexto incluye una 'ANCLA CALCULADA POR CODIGO', esa cifra fue calculada matematicamente por el sistema (no por vos) a partir de los mismos comparables, y es mas confiable que tu propia lectura del texto: tu precio_m2_usd final debe estar dentro de +-20% de esa ancla, salvo justificacion explicita en el analisis.\n"
           : "REGLAS: 1)Precio techo zona-nunca CABA para GBA. 2)Barrios abiertos compiten cerrados=techo real. 3)GBA Sur casas max USD 1200/m2. 4)6 comparables MAS CERCANOS a " + address + ". 5)Promedio m2=base valor. 6)Rango+-5%. 7)CONSERVADOR.\n") +
+        (tipo === "lote" && loteSubtipo === "urbano" && loteEntorno === "centrico"
+          ? "REGLAS LOTE CENTRICO (edificabilidad): 1)Este lote esta en zona centrica/sobre avenida: su valor lo define el POTENCIAL CONSTRUCTIVO, no el m2 residencial. 2)BASE: usar comparables marcados [DESARROLLO] o que mencionen 'apto edificio/desarrollo/emprendimiento' o zonificacion (R2, R3, C, FOT); los [RESIDENCIAL] solo sirven como PISO minimo. 3)Si los comparables traen zonificacion/FOT, mencionalos en el analisis. 4)SANITY CHECK: un lote centrico NUNCA vale menos por m2 que el promedio de lotes residenciales de la misma localidad; si tu calculo da menos, esta MAL. 5)Si no hay comparables apto desarrollo en el contexto, usa los residenciales como piso y aplica un premium de zona centrica de +30-60% segun cuan comercial sea la ubicacion, aclarandolo en el analisis. 6)En el campo analisis, aclarar SIEMPRE que el valor definitivo de un lote centrico depende de la zonificacion municipal (FOS/FOT) y recomendar verificarla en el municipio antes de decidir.\n"
+          : "") +
         "OPERACION: " + (operacion === "alquiler" ? "ALQUILER - calcular valor de alquiler mensual en DOLARES AMERICANOS." + (dolarBlue > 0 ? " Tipo de cambio dolar blue: $" + dolarBlue.toLocaleString("es-AR") + ". Si encontras comparables en pesos, convertirlos a dolares con ese tipo de cambio antes de calcular el promedio." : "") + " Los comparables son precios de alquiler, NO de venta." : "VENTA - calcular valor de venta en DOLARES AMERICANOS.") + "\n" +
-        "MODELO DE VALUACION:\n" +
+        "MODELO DE VALUACION (BLOQUE 2 — la IA ya NO aplica ajustes, solo da el precio base de mercado):\n" +
         "PASO 1 - BASE: usar precio/m2 promedio de los comparables encontrados, calculado SIEMPRE sobre m2 CUBIERTOS/construidos, NUNCA sobre m2 de lote/terreno total (especialmente en casas, donde el lote suele ser 2-3 veces mas grande que lo cubierto). Ese promedio YA refleja el mercado real de la zona incluyendo propiedades en distintos estados.\n" +
-        "PASO 2 - ANCLA: identificar el comparable mas similar en superficie y tipologia y usarlo como referencia principal.\n" +
-        "PASO 3 - AJUSTES: aplicar SOLO diferencias respecto al promedio zonal. Si los comparables ya incluyen propiedades deterioradas, el ajuste por estado es minimo o cero.\n" +
-        "PASO 4 - TECHO DURO: ajuste total maximo +15% / minimo -20%. IRROMPIBLE. Recortar si se supera.\n" +
+        "PASO 2 - ANCLA: identificar el comparable mas similar en superficie y tipologia y usarlo como referencia principal. Tu campo 'precio_base_m2_usd' es SOLO este promedio/ancla de mercado, SIN aplicar todavia ningun ajuste por estado, disposicion, ascensor, balcon, hall, cocina, banos ni luminosidad — esos ajustes los aplica el sistema en codigo, siempre con el mismo criterio, no vos.\n" +
         "\n" +
         "REGLAS CRITICAS:\n" +
-        "REGLA 1 - UN SOLO FACTOR DE ESTADO: Estado general, deterioro estructural y antiguedad describen lo mismo. Elegir el mas representativo y aplicar UNO SOLO. NUNCA acumular los tres.\n" +
-        "REGLA 2 - COCHERA ES FILTRO NO AJUSTE: comparables ya filtrados por cochera. No aplicar porcentaje por cochera.\n" +
-        "REGLA 3 - ORIENTACION INFORMATIVA: mencionar orientacion en el analisis pero aplicar 0% de ajuste. No sube ni baja el precio.\n" +
-        "REGLA 4 - DEMOLICION: si hay riesgo de derrumbe, comparar con terrenos de la zona, no con propiedades.\n" +
-        "REGLA 5 - LOTE A LAGUNA (EXCEPCION AL TECHO): si la propiedad tiene la caracteristica 'Lote a laguna', aplicar SIEMPRE +10% adicional sobre el valor final YA CALCULADO (despues de aplicar el resto de ajustes y el techo +15%/-20%). Este +10% es OBLIGATORIO, se suma DESPUES del techo, y por lo tanto el techo NO aplica a este ajuste especifico. Ejemplo: si el valor con techo aplicado da USD 500.000, con lote a laguna el valor final es USD 550.000.\n" +
+        "REGLA - DEMOLICION: si hay riesgo de derrumbe, comparar con terrenos de la zona, no con propiedades.\n" +
+        "REGLA - ORIENTACION Y COCHERA: son solo informativas para el campo 'analisis' (mencionalas si son relevantes), no cambian 'precio_base_m2_usd' — los comparables ya vienen filtrados por cochera y la orientacion no tiene ajuste numerico.\n" +
         "\n" +
-        "AJUSTES ESTRUCTURALES (caracteristicas fijas, aplicar siempre):\n" +
-        "DISPOSICION: frente 0% / lateral -5% / contrafrente -10% / interno -12%.\n" +
-        "ASCENSOR: con 0% / sin hasta 2do piso -5% / sin 3ro+ -10%.\n" +
-        "BALCON: con balcon +5%.\n" +
-        "HALL: moderno +3% / buen estado 0% / antiguo prolijo -2% / deteriorado -5%.\n" +
-        "PH ACCESO: usar ajuste calculado en propData exactamente.\n" +
+        "CLASIFICACION (categorias para el sistema — a partir de las fotos; NO calcules ningun porcentaje, solo elegi la categoria):\n" +
+        "cocina: \"renovada\" (a nuevo) / \"normal\" / \"a_renovar\".\n" +
+        "banos: \"renovados\" (a nuevo) / \"normal\" / \"a_renovar\".\n" +
+        "luminosidad: \"superior\" (muy por encima del promedio) / \"normal\" / \"inferior\" (muy por debajo).\n" +
+        "EXPENSAS mas de $250k: mencionar negativamente en el analisis.\n" +
         "\n" +
-        "AJUSTE DE ESTADO (elegir UNO solo, el mas representativo):\n" +
-        "Muy por encima del promedio zonal (a estrenar / refaccionado a nuevo): +8%.\n" +
-        "Por encima del promedio (muy bueno): +4%.\n" +
-        "En linea con el promedio (bueno): 0%.\n" +
-        "Por debajo del promedio (a reciclar): -8%.\n" +
-        "Muy deteriorado con problemas estructurales: -15%.\n" +
-        "\n" +
-        "AJUSTES SECUNDARIOS (solo si hay diferencia clara respecto al promedio):\n" +
-        "COCINA renovada a nuevo: +5%. A renovar: -5%.\n" +
-        "BANOS renovados a nuevo: +5%. A renovar: -5%.\n" +
-        "LUMINOSIDAD muy superior al promedio: +3%. Muy inferior: -3%.\n" +
-        "EXPENSAS mas de $250k: mencionar negativamente en analisis.\n" +
-        "\n" +
-        "BLOQUE DE REFACCION: si y solo si cocina + banos + pisos estan todos deteriorados simultaneamente segun las fotos, incluir en el campo 'costo_refaccion_usd' el calculo: superficie_cubierta x 650. Sino, poner 0.\n" +
+        "BLOQUE DE REFACCION: si y solo si cocina + banos + pisos estan todos deteriorados simultaneamente segun las fotos, marcar 'necesita_refaccion_integral': true. Sino, false. NO calcules el costo en dolares — eso lo hace el sistema con superficie_cubierta x 650.\n" +
         (msgContent.length>0 ? (tipo==="lote" ? "FOTOS LOTE: detecta medianeras,nivel suelo,arboles,accesibilidad,construccion.\n" : "FOTOS: analiza terminaciones,humedad,grietas,materiales.\n") : "") +
-        "RESPONDE SOLO JSON SIN MARKDOWN:\n" +
-        '{"valor_usd":0,"rango_min_usd":0,"rango_max_usd":0,"precio_m2_usd":0,"alerta_estructural":false,"costo_refaccion_usd":0,"scores":[{"nombre":"Terminaciones","valor":7},{"nombre":"Estado general","valor":7},{"nombre":"Luminosidad","valor":6},{"nombre":"Materiales","valor":6},{"nombre":"Distribucion","valor":7}],"comparables":[{"direccion":"Calle A","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":80,"precio_usd":0,"fuente":"Relevamiento de mercado"},{"direccion":"Calle B","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":90,"precio_usd":0,"fuente":"Relevamiento de mercado"},{"direccion":"Calle C","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":75,"precio_usd":0,"fuente":"Relevamiento de mercado"},{"direccion":"Calle D","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":85,"precio_usd":0,"fuente":"Relevamiento de mercado"},{"direccion":"Calle E","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":95,"precio_usd":0,"fuente":"Relevamiento de mercado"},{"direccion":"Calle F","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":70,"precio_usd":0,"fuente":"Relevamiento de mercado"}],"factores":[{"tipo":"pos","titulo":"Factor","descripcion":"Desc.","impacto":"+X%"},{"tipo":"neg","titulo":"Factor","descripcion":"Desc.","impacto":"-X%"},{"tipo":"neu","titulo":"Zona","descripcion":"Desc.","impacto":"Neutro"}],"analisis":"4 oraciones."}';
+        "RESPONDE SOLO JSON SIN MARKDOWN (precio_base_m2_usd es SOLO el promedio/ancla de mercado, sin ningun ajuste aplicado):\n" +
+        '{"precio_base_m2_usd":0,"alerta_estructural":false,"necesita_refaccion_integral":false,"clasificacion":{"cocina":"normal","banos":"normal","luminosidad":"normal"},"scores":[{"nombre":"Terminaciones","valor":7},{"nombre":"Estado general","valor":7},{"nombre":"Luminosidad","valor":6},{"nombre":"Materiales","valor":6},{"nombre":"Distribucion","valor":7}],"comparables":[{"direccion":"Calle A","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":80,"precio_usd":0,"fuente":"Relevamiento de mercado"},{"direccion":"Calle B","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":90,"precio_usd":0,"fuente":"Relevamiento de mercado"},{"direccion":"Calle C","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":75,"precio_usd":0,"fuente":"Relevamiento de mercado"},{"direccion":"Calle D","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":85,"precio_usd":0,"fuente":"Relevamiento de mercado"},{"direccion":"Calle E","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":95,"precio_usd":0,"fuente":"Relevamiento de mercado"},{"direccion":"Calle F","barrio":"' + (nombreBarrioPrivado||barrio) + '","m2":70,"precio_usd":0,"fuente":"Relevamiento de mercado"}],"analisis":"4 oraciones."}';
 
       msgContent.push({ type: "text", text: prompt });
       setLoadStep(5);
@@ -1259,12 +1519,85 @@ export default function TasaLibre() {
           } catch(e3) { throw new Error("JSON invalido: " + e.message + " | " + jsonStr.slice(0,200)); }
         }
       }
-      if (parsed.valor_usd === undefined || parsed.valor_usd === null) throw new Error("Respuesta invalida de la IA. Keys: " + Object.keys(parsed).join(", "));
-      // valor_usd === 0 es válido: significa "sin datos suficientes para esta zona"
+      if (parsed.precio_base_m2_usd === undefined || parsed.precio_base_m2_usd === null) throw new Error("Respuesta invalida de la IA. Keys: " + Object.keys(parsed).join(", "));
+      // precio_base_m2_usd === 0 es válido: significa "sin datos suficientes para esta zona"
+
+      // ── BLOQUE 2: motor determinístico de ajustes estructurales ──────────
+      // disposición, ascensor, balcón, hall, estado y acceso de PH ya son
+      // datos conocidos del formulario — el código los aplica siempre igual,
+      // la IA ya no hace esa suma.
+      const estructural = calcularAjusteEstructural({
+        disposicion: tipo === "departamento" ? disposicion : undefined,
+        ascensor: tipo === "departamento" ? ascensor : undefined,
+        pisoBajo: Number(piso) <= 2,
+        balcon: tipo === "departamento" ? balcon : undefined,
+        hall: tipo === "departamento" ? hallEstado : undefined,
+        estado: tipo !== "lote" ? estado : undefined,
+        phAcceso: tipo === "ph"
+          ? { alFrente: phAlFrente, pasillo: phPasillo, escalera: phEscalera, accesoDeteriorado: phAccesoEstado === "deteriorado" }
+          : null,
+      });
+      const secundario = calcularAjusteSecundario(parsed.clasificacion);
+      const { factorFinal } = combinarAjustes({
+        pctEstructural: estructural.pctEstructural,
+        pctSecundario: secundario.pctSecundario,
+        loteALaguna: amenities.includes("Lote a laguna"),
+      });
+
+      // ── BLOQUE 3: clamp del precio base contra el ancla verificada por
+      // código (antes esto solo se le PEDÍA a la IA por texto, nunca se
+      // verificaba). ────────────────────────────────────────────────────────
+      const anclaClamp = clampearContraAncla(parsed.precio_base_m2_usd, anclaNumerica);
+      const precioBaseClampeado = anclaClamp.precioM2Final;
+
+      // ── BLOQUE 1: rango, precio/m2 y costo de refacción — aritmética
+      // simple, siempre en código. precio_m2_usd y valor_usd se derivan del
+      // precio base ya clampeado x el factor de ajuste del Bloque 2. ───────
+      const supBase = tipo === "lote" ? (Number(supTotal) || 0) : (Number(supCub || supTotal) || 0);
+      parsed.precio_m2_usd = Math.round((precioBaseClampeado || 0) * factorFinal);
+      parsed.valor_usd = Math.round(parsed.precio_m2_usd * supBase);
+      parsed.rango_min_usd = Math.round(parsed.valor_usd * 0.95);
+      parsed.rango_max_usd = Math.round(parsed.valor_usd * 1.05);
+      parsed.costo_refaccion_usd = parsed.necesita_refaccion_integral ? Math.round(supBase * 650) : 0;
+
+      // ── BLOQUE 6: los "factores" que ve el usuario salen de los mismos
+      // ajustes que calcularon el precio — no de una redacción aparte de la
+      // IA que podría no coincidir con el número real. ─────────────────────
+      parsed.factores = generarFactores([...estructural.detalle, ...secundario.detalle]);
+
+      // ── BLOQUE 4: índice de confianza — determinístico, no se le pregunta
+      // a la IA. ────────────────────────────────────────────────────────────
+      const camposFaltantes = (propData.match(/\?/g) || []).length;
+      parsed.confianza = calcularConfianza({
+        comparablesEncontrados: preciosM2Calculados.length,
+        hayAncla: anclaNumerica != null,
+        seAlejoDelAncla: anclaClamp.corregido,
+        camposFaltantes,
+        busquedasFallidas: searchErrors.length,
+        esFallbackSinComparables: sinComparablesBarrioCerrado,
+      });
+
+      // ── Ajuste de pileta (casas, venta) ─────────────────────────────────
+      // No se lo pedimos a la IA porque terminaría narrándolo en el "análisis"
+      // ("le sumé un 5% por la pileta..."). Se aplica acá, en código, después
+      // de la tasación, así el informe nunca lo menciona pero el número sí lo refleja.
+      // Solo casas: en depto/PH "Pileta" suele ser de uso común del edificio y
+      // ya está reflejada en el precio de los comparables — sumarla de nuevo duplicaría el efecto.
+      if (tipo === "casa" && operacion === "venta" && amenities.includes("Pileta") && parsed.valor_usd > 0) {
+        const PILETA_TOPE_USD = 15000;
+        const incremento = Math.min(Math.round(parsed.valor_usd * 0.05), PILETA_TOPE_USD);
+        if (incremento > 0) {
+          const factor = (parsed.valor_usd + incremento) / parsed.valor_usd;
+          parsed.valor_usd = parsed.valor_usd + incremento;
+          if (parsed.rango_min_usd) parsed.rango_min_usd = Math.round(parsed.rango_min_usd + incremento);
+          if (parsed.rango_max_usd) parsed.rango_max_usd = Math.round(parsed.rango_max_usd + incremento);
+          if (parsed.precio_m2_usd) parsed.precio_m2_usd = Math.round(parsed.precio_m2_usd * factor);
+        }
+      }
 
       if (!skipContact && nombre.trim()) {
         const htmlInforme = generatePDF(parsed, address, photos, true);
-        await saveLead({ id:Date.now(), fecha:new Date().toLocaleString("es-AR"), nombre:nombre.trim(), whatsapp:whatsapp.trim(), tipo, address, operacion, supTotal, ambientes, dormitorios, valorUsd:parsed.valor_usd, precioM2:parsed.precio_m2_usd, htmlInforme, resultadoJson:parsed });
+        await saveLead({ id:Date.now(), fecha:new Date().toLocaleString("es-AR"), nombre:nombre.trim(), whatsapp:(normalizarCelularAR(whatsapp)||whatsapp.trim()), tipo, address, operacion, supTotal, ambientes, dormitorios, valorUsd:parsed.valor_usd, precioM2:parsed.precio_m2_usd, htmlInforme, resultadoJson:parsed });
       }
 
       setResult(Object.assign({}, parsed, { address, operacion }));
@@ -1280,7 +1613,16 @@ export default function TasaLibre() {
     }
   };
 
-  const submitContact = () => { callApi(false); };
+  const submitContact = () => {
+    if (!normalizarCelularAR(whatsapp)) {
+      setErrWhatsapp(errorCelularAR(whatsapp) || "Número de teléfono inválido.");
+      const el = document.getElementById("wa-input");
+      if (el) el.focus();
+      return;
+    }
+    setErrWhatsapp("");
+    callApi(false);
+  };
 
   const adminLogin = () => {
     if (adminPass === ADMIN_PASS) { setAdminErr(""); setScreen("admin"); }
@@ -1475,6 +1817,12 @@ export default function TasaLibre() {
 
                 {tipo==="lote" && loteSubtipo==="urbano" && (
                   <>
+                    <div className="field"><label>Entorno del lote</label>
+                      <div className="chips">
+                        <div className={"chip"+(loteEntorno==="residencial"?" on":"")} onClick={()=>setLoteEntorno("residencial")}>Calle residencial</div>
+                        <div className={"chip"+(loteEntorno==="centrico"?" on":"")} onClick={()=>setLoteEntorno("centrico")}>Zona céntrica / sobre avenida</div>
+                      </div>
+                    </div>
                     <div className="field"><label>Barrio / Localidad *</label>
                       <input value={barrio} onChange={e=>setBarrio(e.target.value)} placeholder="ej. Quilmes Centro, Lanús..."/>
                       {errBarrio && <div className="err">Ingresá el barrio.</div>}
@@ -2030,8 +2378,16 @@ export default function TasaLibre() {
               </div>
               <div className="contact-field">
                 <label>WhatsApp</label>
-                <input id="wa-input" className="contact-input" type="tel" value={whatsapp} onChange={e=>setWhatsapp(e.target.value)}
-                  placeholder="11 5555 1234" onKeyDown={e=>e.key==="Enter"&&submitContact()}/>
+                <input id="wa-input" className="contact-input" type="tel" value={whatsapp}
+                  onChange={e=>{setWhatsapp(e.target.value); if(errWhatsapp) setErrWhatsapp("");}}
+                  placeholder="11 5555 1234" onKeyDown={e=>e.key==="Enter"&&submitContact()}
+                  style={errWhatsapp ? {borderColor:"#DC2626", boxShadow:"0 0 0 3px rgba(220,38,38,0.12)"} : undefined}/>
+                {errWhatsapp && (
+                  <div style={{marginTop:6, fontSize:12.5, color:"#DC2626", display:"flex", alignItems:"flex-start", gap:6, lineHeight:1.45}}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{flexShrink:0, marginTop:1}}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span><strong>Número de teléfono inválido.</strong> {errWhatsapp}</span>
+                  </div>
+                )}
                 <div className="contact-wa-hint">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.69A2 2 0 012 .9h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 8.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
                   Solo te enviamos un mensaje con tu tasación.
@@ -2096,7 +2452,23 @@ export default function TasaLibre() {
               )}
               <div className="res-range">Rango: {fmt(result.rango_min_usd)} – {fmt(result.rango_max_usd)}{esAlquiler ? " /mes" : ""} · {fmtM2(result.precio_m2_usd)}</div>
               <div className="res-addr">{result.address}</div>
+              {/* BLOQUE 4: índice de confianza — calculado 100% en código */}
+              {result.confianza && (
+                <div style={{
+                  display:"inline-flex", alignItems:"center", gap:6, marginTop:10,
+                  background: result.confianza.nivel==="alta" ? "rgba(220,252,231,.9)" : result.confianza.nivel==="media" ? "rgba(255,248,231,.9)" : "rgba(254,226,226,.9)",
+                  color: result.confianza.nivel==="alta" ? "#16A34A" : result.confianza.nivel==="media" ? "#92400E" : "#DC2626",
+                  borderRadius:100, padding:"4px 12px", fontSize:11, fontWeight:700,
+                }}>
+                  Confianza {result.confianza.nivel==="alta"?"alta":result.confianza.nivel==="media"?"media":"baja"} ({result.confianza.score}/100)
+                </div>
+              )}
             </div>
+            {result.confianza && result.confianza.nivel === "baja" && (
+              <div style={{background:"#FFF8ED",border:"1.5px solid #F59E0B",borderRadius:"var(--radius)",padding:"14px 18px",marginBottom:16,fontSize:13,color:"#78350F",lineHeight:1.6}}>
+                Esta tasación tiene <strong>confianza baja</strong>: encontramos pocos comparables verificados para esta zona. Te recomendamos hablar con un asesor antes de tomar una decisión.
+              </div>
+            )}
 
             {/* Botón WhatsApp prominente */}
             <a href={waLink(result)}
@@ -2306,7 +2678,7 @@ export default function TasaLibre() {
                         <div className="lead-name">{l.nombre||<span style={{color:"var(--ink-4)",fontStyle:"italic"}}>Anónimo</span>}</div>
                         {l.whatsapp&&<div className="lead-contact">📱 {l.whatsapp}</div>}
                         {l.whatsapp ? (
-                          <a href={"https://wa.me/54"+l.whatsapp.replace(/\D/g,"")+"?text="+encodeURIComponent("Hola "+(l.nombre?l.nombre.split(" ")[0]:"")+"! Te contacto desde TasaLibre. Vi que tasaste tu "+l.tipo+" en "+l.address+". Tuviste oportunidad de ver el informe? Tenes alguna consulta sobre el valor?")}
+                          <a href={"https://wa.me/549"+(normalizarCelularAR(l.whatsapp)||l.whatsapp.replace(/\D/g,"").replace(/^549/,"").replace(/^54/,"").replace(/^0/,""))+"?text="+encodeURIComponent("Hola "+(l.nombre?l.nombre.split(" ")[0]:"")+"! Te contacto desde TasaLibre. Vi que tasaste tu "+l.tipo+" en "+l.address+". Tuviste oportunidad de ver el informe? Tenes alguna consulta sobre el valor?")}
                             target="_blank" rel="noopener noreferrer"
                             style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:8,background:"#25D366",color:"white",padding:"6px 14px",borderRadius:100,fontSize:12,fontWeight:600,textDecoration:"none"}}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
@@ -2332,6 +2704,24 @@ export default function TasaLibre() {
                       <td>
                         <div className="lead-price">{fmt(l.valor_usd || l.valorUsd)}</div>
                         <div style={{fontSize:11,color:"var(--ink-4)",marginTop:2}}>{fmt(l.precio_m2 || l.precioM2)}/m²</div>
+                        {/* BLOQUE 5: corrección manual → loop de calibración */}
+                        {correctionSaved[l.id] ? (
+                          <div style={{fontSize:11,color:"#16A34A",marginTop:6,fontWeight:600}}>✓ Corrección guardada</div>
+                        ) : (
+                          <div style={{display:"flex",gap:4,marginTop:6}}>
+                            <input
+                              type="number"
+                              placeholder="Valor real"
+                              value={correctionDrafts[l.id] || ""}
+                              onChange={e=>setCorrectionDrafts(prev=>({...prev,[l.id]:e.target.value}))}
+                              style={{width:80,fontSize:11,padding:"3px 6px",border:"1px solid var(--border)",borderRadius:6}}
+                            />
+                            <button onClick={()=>submitCorrection(l.id)}
+                              style={{fontSize:11,padding:"3px 8px",border:"none",borderRadius:6,background:"var(--azul)",color:"white",cursor:"pointer"}}>
+                              Guardar
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td><div className="lead-date">{l.fecha}</div></td>
                       <td>
