@@ -1250,6 +1250,8 @@ export default function TasaLibre() {
       let tokkoContext = "";
       let tokkoComps = [];
       let streetsNearby = [];
+      let coordsPropiedad = null;
+      let barrioDetectado = "";
       try {
         const enrichRes = await fetch("/api/tasar", {
           method: "POST",
@@ -1270,6 +1272,12 @@ export default function TasaLibre() {
         tokkoContext = enrichData.tokkoContext || "";
         tokkoComps = enrichData.tokkoComps || [];
         streetsNearby = enrichData.streetsNearby || [];
+        // BLOQUE 12: coordsPropiedad (Google, con Nominatim de respaldo) es lo
+        // que permite verificar distancia REAL de cada comparable más abajo.
+        // barrioDetectado sale de Google a partir de la dirección — no hace
+        // falta que el usuario tipee bien la subzona en el formulario.
+        coordsPropiedad = enrichData.coords || null;
+        barrioDetectado = enrichData.barrioDetectado || "";
       } catch(e) { console.warn("Enriquecimiento falló:", e.message); }
 
       // BLOQUE 9: las queries de búsqueda se arman DESPUÉS del enriquecimiento
@@ -1373,6 +1381,12 @@ export default function TasaLibre() {
         }
       }
 
+      // BLOQUE 12: candidatos de mercado abierto se acumulan acá y se
+      // verifican por distancia REAL (geocode) recién DESPUÉS del loop de
+      // las 3 búsquedas — así se hace UNA sola tanda de geocoding en vez de
+      // una por búsqueda. Barrio cerrado no toca esto, sigue exactamente igual.
+      const candidatosAbiertos = [];
+
       for (const res of searchResults) {
         if (res.error) { searchErrors.push(res.error); continue; }
         if (!res.text || !res.text.trim()) continue;
@@ -1422,20 +1436,70 @@ export default function TasaLibre() {
           // instruccion del prompt no alcanza, la IA no siempre la respeta.
           const geoFiltro = (streetsNearby || []).map(normalizarTexto).filter(Boolean);
           const calleFiltro = normalizarTexto(calle);
-          const partesFiltradas = geoFiltro.length > 0
-            ? partes.filter(linea => {
-                const l = normalizarTexto(linea);
-                return (calleFiltro && l.includes(calleFiltro)) || geoFiltro.some(c => l.includes(c));
-              })
-            : partes;
+          const barrioFiltro = normalizarTexto(barrio);
+          // BLOQUE 11: si el geocode falló (streetsNearby vacío — Nominatim
+          // puede bloquear IPs de hosting compartido como las de Vercel),
+          // el filtro NUNCA debe caer a "sin filtro": como mínimo exige que
+          // la línea mencione el barrio tipeado o la calle de la propiedad.
+          // Dejar pasar todo sin filtrar es lo que venía rompiendo esto.
+          const partesFiltradas = partes.filter(linea => {
+            const l = normalizarTexto(linea);
+            if (calleFiltro && l.includes(calleFiltro)) return true;
+            if (geoFiltro.some(c => l.includes(c))) return true;
+            if (geoFiltro.length === 0 && barrioFiltro && l.includes(barrioFiltro)) return true;
+            return false;
+          });
 
-          partesFiltradas.forEach(extraerPrecioM2);
-          if (partesFiltradas.length > 0) {
-            comparablesData += " | " + partesFiltradas.join(" | ").slice(0, 1200);
-          }
+          candidatosAbiertos.push(...partesFiltradas);
         }
 
       }
+
+      // BLOQUE 12: verificación geográfica por DISTANCIA REAL (Google), no
+      // por texto. Se geocodifica la dirección de cada línea candidata (ya
+      // pre-filtrada por texto arriba, para no pagar geocodes de más) y se
+      // descarta cualquiera que quede a más de RADIO_MAX_KM de la propiedad.
+      // Si el geocode de la propiedad falló, o si esta llamada falla, se usa
+      // tal cual lo que ya pasó el filtro de texto (mismo respaldo de antes).
+      const RADIO_MAX_KM = 1.5;
+      let candidatosVerificados = candidatosAbiertos;
+      if (!esCerradoSearch && coordsPropiedad && candidatosAbiertos.length > 0) {
+        try {
+          const direccionesCandidatas = candidatosAbiertos
+            .map(l => (l.split(" | ")[0] || "").trim())
+            .filter(Boolean);
+          const geoRes = await fetch("/api/tasar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
+              _geocodeBatch: true,
+              _meta: {
+                direcciones: direccionesCandidatas,
+                contexto: [barrioDetectado || barrio, provincia].filter(Boolean).join(", "),
+                origenLat: coordsPropiedad.lat, origenLon: coordsPropiedad.lon,
+              },
+            }),
+          });
+          const geoData = await geoRes.json();
+          const cercanas = new Set(
+            (geoData.resultados || [])
+              .filter(r => r.distanciaKm != null && r.distanciaKm <= RADIO_MAX_KM)
+              .map(r => normalizarTexto(r.direccion))
+          );
+          if (cercanas.size > 0) {
+            candidatosVerificados = candidatosAbiertos.filter(l => cercanas.has(normalizarTexto((l.split(" | ")[0] || "").trim())));
+          }
+          // Si cercanas.size === 0 (ningún geocode dio distancia válida), se
+          // mantiene el respaldo por texto en vez de vaciar todo — más vale
+          // un dato aproximado que ningún comparable.
+        } catch(e) { console.warn("Geocode batch falló:", e.message); }
+      }
+      candidatosVerificados.forEach(extraerPrecioM2);
+      if (candidatosVerificados.length > 0) {
+        comparablesData += " | " + candidatosVerificados.join(" | ").slice(0, 1200);
+      }
+
       // Si las 3 búsquedas fallaron, es un error técnico real — no seguir
       if (searchErrors.length === queries.length && !comparablesData.trim()) {
         throw new Error("Error en búsqueda de comparables: " + searchErrors[0]);
@@ -1582,20 +1646,57 @@ export default function TasaLibre() {
       if (parsed.precio_base_m2_usd === undefined || parsed.precio_base_m2_usd === null) throw new Error("Respuesta invalida de la IA. Keys: " + Object.keys(parsed).join(", "));
       // precio_base_m2_usd === 0 es válido: significa "sin datos suficientes para esta zona"
 
-      // BLOQUE 9: filtro geografico por codigo sobre la lista de comparables
-      // que arma la IA — no alcanza con pedirle por texto que se ciña a la
-      // zona geolocalizada, hay que verificarlo. Si el geocode encontro
-      // calles reales cerca de la propiedad, se descarta cualquier
-      // comparable cuya direccion no mencione ninguna de esas calles ni la
-      // propia calle de la propiedad (no aplica a barrio cerrado, ahi no se
-      // geocodifica y streetsNearby siempre llega vacío).
-      if (!esCerradoSearch && streetsNearby && streetsNearby.length > 0 && Array.isArray(parsed.comparables)) {
-        const geoFiltro = streetsNearby.map(normalizarTexto).filter(Boolean);
+      // BLOQUE 9/11/12: filtro geografico sobre la lista de comparables que
+      // arma la IA — no alcanza con pedirle por texto que se ciña a la zona,
+      // hay que verificarlo. Primero un filtro de texto barato (calles
+      // geolocalizadas cercanas, o barrio como respaldo si el geocode
+      // falló), y despues, si hay coordenadas de la propiedad, se verifica
+      // con DISTANCIA REAL (geocode de cada dirección + Haversine) — esto es
+      // lo que realmente garantiza un radio de verdad. (No aplica a barrio
+      // cerrado: ahí el filtro por título ya es más estricto que esto).
+      if (!esCerradoSearch && Array.isArray(parsed.comparables)) {
+        const geoFiltro = (streetsNearby || []).map(normalizarTexto).filter(Boolean);
         const calleFiltro = normalizarTexto(calle);
+        const barrioFiltro = normalizarTexto(barrio);
         parsed.comparables = parsed.comparables.filter(c => {
           const d = normalizarTexto(c.direccion);
-          return (calleFiltro && d.includes(calleFiltro)) || geoFiltro.some(cl => d.includes(cl));
+          if (calleFiltro && d.includes(calleFiltro)) return true;
+          if (geoFiltro.some(cl => d.includes(cl))) return true;
+          if (geoFiltro.length === 0 && barrioFiltro && d.includes(barrioFiltro)) return true;
+          return false;
         });
+
+        if (coordsPropiedad && parsed.comparables.length > 0) {
+          try {
+            const RADIO_MAX_KM_COMPS = 1.5;
+            const direccionesComps = parsed.comparables.map(c => c.direccion).filter(Boolean);
+            const geoRes2 = await fetch("/api/tasar", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({
+                _geocodeBatch: true,
+                _meta: {
+                  direcciones: direccionesComps,
+                  contexto: [barrioDetectado || barrio, provincia].filter(Boolean).join(", "),
+                  origenLat: coordsPropiedad.lat, origenLon: coordsPropiedad.lon,
+                },
+              }),
+            });
+            const geoData2 = await geoRes2.json();
+            const distanciaPorDireccion = new Map(
+              (geoData2.resultados || []).map(r => [normalizarTexto(r.direccion), r.distanciaKm])
+            );
+            const conDistanciaValida = parsed.comparables.filter(c => {
+              const dk = distanciaPorDireccion.get(normalizarTexto(c.direccion));
+              return dk != null && dk <= RADIO_MAX_KM_COMPS;
+            });
+            // Igual que arriba: si NINGUNO tiene distancia válida (geocode
+            // no encontró nada), se mantiene el filtro de texto en vez de
+            // vaciar la lista entera.
+            if (conDistanciaValida.length > 0) parsed.comparables = conDistanciaValida;
+          } catch(e) { console.warn("Geocode batch de comparables falló:", e.message); }
+        }
       }
 
       // ── BLOQUE 2: motor determinístico de ajustes estructurales ──────────
