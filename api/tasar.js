@@ -46,6 +46,24 @@ async function geocodeAddress(address) {
   } catch { return null; }
 }
 
+// ── Detección de centralidad: estación de tren a <600m (proxy clave en GBA,
+// donde el valor de la tierra se concentra alrededor de las estaciones) ─────
+async function getNearbyStation(lat, lon) {
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 5000);
+    const query = `[out:json][timeout:4];node(around:600,${lat},${lon})["railway"="station"];out tags 3;`;
+    const res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST", signal: ctrl.signal,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`
+    });
+    const data = await res.json();
+    const st = (data.elements || [])[0];
+    return st ? (st.tags?.name || "estación de tren") : null;
+  } catch { return null; }
+}
+
 async function getNearbyStreets(lat, lon, radius) {
   try {
     const ctrl = new AbortController();
@@ -171,9 +189,6 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: { message: "API key not configured" } });
-
   // Rate limiting por IP — máx 16 llamadas/día (≈4 tasaciones)
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "";
   const allowed = await checkRateLimit(ip);
@@ -181,12 +196,12 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: { message: "Alcanzaste el límite de tasaciones diarias. Volvé mañana o contactanos por WhatsApp." } });
   }
 
-  const body = { ...req.body };
-  const isSearch = body?.tools?.[0]?.type === "web_search_20250305";
-
-  if (isSearch && body._meta) {
-    const { address, tipo, operacion, barrio, supTotal, conCochera, esCerrado } = body._meta;
-    delete body._meta;
+  // ── BLOQUE 8: rama de solo-enriquecimiento — NO llama a Claude. Antes,
+  // geocode+Overpass+estación+Tokko se repetían 3 veces (una por cada
+  // búsqueda en paralelo que dispara el cliente) con el mismo resultado.
+  // Ahora corren UNA sola vez acá, y el cliente reusa esto para las 3.
+  if (req.body?._enrichOnly) {
+    const { address, tipo, operacion, barrio, supTotal, conCochera, esCerrado, loteCentrico } = req.body._meta || {};
 
     const [coords, tokkoComps] = await Promise.all([
       address ? geocodeAddress(address) : Promise.resolve(null),
@@ -198,8 +213,23 @@ export default async function handler(req, res) {
       let streets = await getNearbyStreets(coords.lat, coords.lon, 500);
       if (streets.length < 3) streets = await getNearbyStreets(coords.lat, coords.lon, 1000);
       if (streets.length) streetContext = `CALLES CERCANAS (500m): ${streets.join(", ")}. `;
+
+      // Para lotes: chequear estación de tren cercana (detección automática de zona céntrica).
+      // Refuerza la marca del usuario, o la aporta si el usuario no marcó "céntrico".
+      if (tipo === "lote" && coords) {
+        const station = await getNearbyStation(coords.lat, coords.lon);
+        if (station) {
+          streetContext += `ZONA CENTRICA DETECTADA: el lote esta a menos de 600m de la estacion ${station} — en GBA el valor de la tierra cerca de estaciones es sensiblemente mayor y suele tener potencial de desarrollo (edificabilidad). Considerar esto en la valuacion. `;
+        } else if (loteCentrico) {
+          streetContext += `El usuario indico que el lote esta en zona centrica o sobre avenida. `;
+        }
+      }
     }
 
+    // BLOQUE 7: tokkoComps viaja ESTRUCTURADO directo al cliente (JSON), no
+    // solo como texto para que la IA lo relea y lo reformatee. tokkoContext
+    // sigue existiendo para dar contexto a la búsqueda, pero el cliente ya
+    // no depende de que la IA le devuelva bien estos números — los tiene acá.
     let tokkoContext = "";
     if (tokkoComps.length > 0) {
       tokkoContext = (esCerrado
@@ -210,12 +240,18 @@ export default async function handler(req, res) {
         ).join(" | ") + `. Usar estos precios/m² como base del cálculo. `;
     }
 
-    if (body.messages?.[0]?.content) {
-      body.messages[0].content = tokkoContext + streetContext + body.messages[0].content;
-    }
-  } else {
-    delete body._meta;
+    return res.status(200).json({ streetContext, tokkoContext, tokkoComps });
   }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: { message: "API key not configured" } });
+
+  // El enriquecimiento ya se resolvió (arriba, una sola vez) antes de que el
+  // cliente dispare las 3 búsquedas — acá solo queda pasar el mensaje ya
+  // armado por el cliente directo a Claude, sin repetir geocode/Tokko/Overpass.
+  const body = { ...req.body };
+  delete body._meta;
+  delete body._enrichOnly;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
