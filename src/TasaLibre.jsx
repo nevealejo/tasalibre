@@ -687,12 +687,18 @@ function calcularConfianza({
   camposFaltantes = 0,
   busquedasFallidas = 0,
   esFallbackSinComparables = false,
+  radioAmpliado = false,
 }) {
   let score = 100;
   if (esFallbackSinComparables) score -= 35;
   if (!hayAncla) score -= 25;
   if (comparablesEncontrados < 3) score -= 15;
   if (seAlejoDelAncla) score -= 20;
+  // BLOQUE 16: si hubo que ampliar el radio de búsqueda (0.8km -> 2.5km)
+  // porque con el radio estricto no aparecía NINGÚN comparable, los que
+  // terminaron entrando están más lejos de lo ideal — penalización chica,
+  // no tan dura como no tener ancla o estar realmente lejos del ancla.
+  if (radioAmpliado) score -= 10;
   score -= Math.min(15, camposFaltantes * 3);
   score -= Math.min(15, busquedasFallidas * 8);
   score = Math.max(0, Math.min(100, score));
@@ -1646,6 +1652,15 @@ export default function TasaLibre() {
       // Si el geocode de la propiedad falló, o si esta llamada falla, se usa
       // tal cual lo que ya pasó el filtro de texto (mismo respaldo de antes).
       const RADIO_MAX_KM = 0.8;
+      // BLOQUE 16: radio amplio de respaldo — si con 0.8km no queda NINGÚN
+      // comparable (zonas de baja densidad de oferta, como se confirmó con
+      // Moreno 450/Quilmes: el geocode encontró y confirmó 7 direcciones
+      // reales, pero ninguna caía dentro de 800m), se reintenta con un radio
+      // más laxo antes de resignarse a mostrar 0. Sigue descartando lo
+      // realmente lejano/fuera de zona (Boedo/Cevallos en su momento
+      // quedaban a >1km, así que 2.5km los sigue excluyendo).
+      const RADIO_MAX_KM_AMPLIO = 2.5;
+      let radioAmpliadoUsado = false;
       let candidatosVerificados = candidatosAbiertos;
       // Mapa línea-cruda -> dirección extraída (calle+número real, no el
       // párrafo entero). Se arma una vez y se reusa para mandar a
@@ -1693,9 +1708,25 @@ export default function TasaLibre() {
             const dk = distanciaPorDireccion.get(normalizarTexto(dir));
             return dk != null && dk <= RADIO_MAX_KM;
           });
+          // BLOQUE 16: si el radio estricto dejó 0 candidatos pero SÍ hubo
+          // direcciones geocodificadas con precisión (solo estaban más lejos
+          // de 800m), reintentar con el radio amplio antes de resignarse.
+          if (candidatosVerificados.length === 0) {
+            const candidatosRadioAmplio = candidatosAbiertos.filter(l => {
+              const dir = direccionPorLinea.get(l);
+              if (!dir) return false;
+              const dk = distanciaPorDireccion.get(normalizarTexto(dir));
+              return dk != null && dk <= RADIO_MAX_KM_AMPLIO;
+            });
+            if (candidatosRadioAmplio.length > 0) {
+              candidatosVerificados = candidatosRadioAmplio;
+              radioAmpliadoUsado = true;
+              console.log(`[BLOQUE12] radio estricto (0.8km) dio 0 — usando radio amplio (${RADIO_MAX_KM_AMPLIO}km): ${candidatosRadioAmplio.length} candidatos`);
+            }
+          }
         } catch(e) { console.warn("Geocode batch falló:", e.message); }
       }
-      console.log(`[BLOQUE12] candidatosVerificados finales=${candidatosVerificados.length}`);
+      console.log(`[BLOQUE12] candidatosVerificados finales=${candidatosVerificados.length} (radio amplio usado: ${radioAmpliadoUsado})`);
       candidatosVerificados.forEach(extraerPrecioM2);
       if (candidatosVerificados.length > 0) {
         comparablesData += " | " + candidatosVerificados.join(" | ").slice(0, 1200);
@@ -1890,6 +1921,7 @@ export default function TasaLibre() {
           // distancia real geocodificada (más confiable que cualquier texto).
           try {
             const RADIO_MAX_KM_COMPS = 0.8;
+            const RADIO_MAX_KM_COMPS_AMPLIO = 2.5;
             const direccionesComps = parsed.comparables.map(c => c.direccion).filter(Boolean);
             const geoRes2 = await fetch("/api/tasar", {
               method: "POST",
@@ -1913,10 +1945,25 @@ export default function TasaLibre() {
             // geocode confirmó distancia real y precisa dentro de radio.
             // Sin confirmación (geocode falló o fue impreciso) => se
             // descarta, no se asume cercanía.
-            parsed.comparables = parsed.comparables.filter(c => {
+            const comparablesEstrictos = parsed.comparables.filter(c => {
               const dk = distanciaPorDireccion.get(normalizarTexto(c.direccion));
               return dk != null && dk <= RADIO_MAX_KM_COMPS;
             });
+            // BLOQUE 16: mismo respaldo de radio amplio que en BLOQUE12 — si
+            // el radio estricto deja 0, probar con 2.5km antes de resignarse.
+            if (comparablesEstrictos.length === 0) {
+              const comparablesAmplios = parsed.comparables.filter(c => {
+                const dk = distanciaPorDireccion.get(normalizarTexto(c.direccion));
+                return dk != null && dk <= RADIO_MAX_KM_COMPS_AMPLIO;
+              });
+              if (comparablesAmplios.length > 0) {
+                radioAmpliadoUsado = true;
+                console.log(`[COMPS] radio estricto (0.8km) dio 0 — usando radio amplio (${RADIO_MAX_KM_COMPS_AMPLIO}km): ${comparablesAmplios.length} comparables`);
+              }
+              parsed.comparables = comparablesAmplios;
+            } else {
+              parsed.comparables = comparablesEstrictos;
+            }
           } catch(e) { console.warn("Geocode batch de comparables falló:", e.message); }
         }
         console.log(`[COMPS] parsed.comparables finales=${parsed.comparables.length}`);
@@ -1975,6 +2022,7 @@ export default function TasaLibre() {
         camposFaltantes,
         busquedasFallidas: searchErrors.length,
         esFallbackSinComparables: sinComparablesBarrioCerrado || sinComparablesVerificados,
+        radioAmpliado: radioAmpliadoUsado,
       });
 
       // ── Ajuste de pileta (casas, venta) ─────────────────────────────────
