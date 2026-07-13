@@ -2020,6 +2020,25 @@ export default function TasaLibre() {
         console.log(`[COMPS] parsed.comparables finales=${parsed.comparables.length}`);
       }
 
+      // BLOQUE 22: garantizar en CODIGO (no solo pedírselo a la IA) que los
+      // comparables reales de Tokko aparezcan en la lista final mostrada al
+      // usuario. Antes dependía 100% de que la IA los copiara a su propio
+      // JSON 'comparables' — en la práctica a veces los usaba para calcular
+      // el precio (vía preciosM2Calculados, BLOQUE 7 más arriba) pero no los
+      // reflejaba en la lista visible ("0 comparables" en pantalla pese a
+      // haber encontrado uno real). Se agregan acá directo, sin duplicar por
+      // dirección, así siempre se ven si existen — corre para barrio abierto
+      // y cerrado por igual.
+      if (!Array.isArray(parsed.comparables)) parsed.comparables = [];
+      if (tokkoComps.length > 0) {
+        const direccionesYaListadas = new Set(parsed.comparables.map(c => normalizarTexto(c.direccion)));
+        const tokkoParaMostrar = tokkoComps.filter(c => !direccionesYaListadas.has(normalizarTexto(c.direccion)));
+        if (tokkoParaMostrar.length > 0) {
+          parsed.comparables = tokkoParaMostrar.concat(parsed.comparables);
+          console.log(`[COMPS] agregados ${tokkoParaMostrar.length} comparables de Tokko directo a la lista final (no dependen de que la IA los copie)`);
+        }
+      }
+
       // ── BLOQUE 2: motor determinístico de ajustes estructurales ──────────
       // disposición, ascensor, balcón, hall, estado y acceso de PH ya son
       // datos conocidos del formulario — el código los aplica siempre igual,
