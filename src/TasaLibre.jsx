@@ -1186,12 +1186,16 @@ export default function TasaLibre() {
               "lote apto edificio " + geoRef + barrio + " " + provincia + " " + op + " precio " + monedaShort,
               "terreno apto desarrollo emprendimiento " + geoRef + barrio + " centro " + provincia + " " + monedaShort,
               "lote " + op + " " + calleRef + geoRef + barrio + " zonificacion FOT " + monedaShort + " mercadolibre inmuebles",
+              "lote " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
+              "terreno " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
             ];
           }
           return [
             "lote " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
             "terreno " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + "precio " + monedaShort + " argenprop",
             "lote urbano " + geoRef + barrio + " " + provincia + " " + op + " " + monedaShort + " mercadolibre inmuebles",
+            "lote " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
+            "terreno " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
           ];
         }
         if (tipo === "departamento" && deptoSubtipo === "cerrado") {
@@ -1204,10 +1208,22 @@ export default function TasaLibre() {
         }
         if (tipo === "departamento") {
           const cocheraFilter = (amenities.includes("Cochera") || amenities.includes("Cochera doble")) ? "con cochera " : "sin cochera ";
+          // BLOQUE 14: antes solo 3 queries, todas apuntando a los mismos 2-3
+          // portales grandes (zonaprop/argenprop) — las inmobiliarias
+          // boutique/locales quedaban fuera del radar aunque tengan muchas
+          // publicaciones reales en la zona. Se agregan variantes: una sin
+          // nombrar ningun portal (deja al buscador libre de encontrar
+          // cualquier fuente), una apuntando explicitamente a inmobiliarias
+          // locales, y una a Properati (portal grande que nunca se
+          // mencionaba). Más diversidad de queries > más reintentos en la
+          // misma query — y con max_uses:1 por llamada, el costo total no
+          // sube (5 busquedas simples en vez de hasta 6 con reintentos).
           return [
             "departamento " + op + " " + calleRef + geoRef + barrio + " " + provincia + " " + dormRef + cocheraFilter + "precio " + monedaShort + " zonaprop",
             "departamento " + op + " " + geoRef + barrio + " " + provincia + " " + ambientes + " ambientes " + cocheraFilter + monedaShort + " argenprop",
             "depto " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + dormRef + cocheraFilter + monedaShort,
+            "departamento " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
+            "departamento " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
           ];
         }
         if (tipo === "casa" && casaSubtipo === "cerrado") {
@@ -1222,6 +1238,8 @@ export default function TasaLibre() {
             "casa " + op + " " + calleRef + geoRef + barrio + " " + provincia + " " + dormRef + "precio " + monedaShort + " zonaprop",
             "casa " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + monedaShort + " argenprop",
             "casa " + geoRef + barrio + " " + provincia + " " + dormRef + supRef + op + " " + monedaShort,
+            "casa " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
+            "casa " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
           ];
         }
         if (tipo === "ph" && deptoSubtipo === "cerrado") {
@@ -1236,6 +1254,8 @@ export default function TasaLibre() {
             "PH " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
             "PH " + op + " " + geoRef + barrio + " " + provincia + " " + ambientes + " ambientes " + monedaShort + " argenprop",
             "ph " + geoRef + barrio + " " + provincia + " " + op + " " + monedaShort,
+            "PH " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
+            "PH " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
           ];
         }
         if (tipo === "local") {
@@ -1243,12 +1263,16 @@ export default function TasaLibre() {
             "local comercial " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
             "local " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + monedaShort + " argenprop",
             "local comercial " + geoRef + barrio + " " + provincia + " " + op + " " + monedaShort + " mercadolibre",
+            "local comercial " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
+            "local comercial " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
           ];
         }
         return [
           tipo + " " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
           tipo + " " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " argenprop",
           tipo + " " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " mercadolibre inmuebles",
+          tipo + " " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
+          tipo + " " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
         ];
       };
 
@@ -1318,7 +1342,9 @@ export default function TasaLibre() {
       const precioLabel = operacion === "alquiler" ? "precio alquiler mensual (en dolares o pesos)" : "precio venta en dolares";
       const dolarContext = operacion === "alquiler" && dolarBlue > 0 ? " Tipo de cambio dolar blue hoy: $" + dolarBlue.toLocaleString("es-AR") + ". Si el precio está en pesos convertirlo a dolares usando ese tipo de cambio." : "";
 
-      // Las 3 búsquedas EN PARALELO — ahorra 60-90 segundos
+      // Las búsquedas EN PARALELO — ahorra 60-90 segundos (3 para barrio
+      // cerrado, sin tocar; 5 para mercado abierto desde BLOQUE 14, cada una
+      // con max_uses:1 — ver buildQueries y el tools de más abajo)
       const searchPromises = queries.map(q => {
         const nombreBarrioCerrado = (casaNombreBarrio || nombreBarrioPrivado || "") + (sectorBarrio ? " " + sectorBarrio : "");
         const esLoteCentrico = tipo === "lote" && loteSubtipo === "urbano" && loteEntorno === "centrico";
@@ -1348,14 +1374,17 @@ export default function TasaLibre() {
             // BLOQUE 10/14: max_uses acota cuántas búsquedas puede hacer el
             // modelo DENTRO de este mismo turno. Sin límite, reintentaba
             // indefinidamente (31 búsquedas, ~1.1M tokens, ~USD 4 en una sola
-            // tasación). Con 4 por llamada x 3 llamadas en paralelo, el techo
-            // teórico son 12 búsquedas por tasación — en el peor caso (cada
-            // búsqueda acumulando tanto contexto como en el incidente de
-            // USD 4) eso todavía puede acercarse a USD 1. Bajado a 2 por
-            // llamada (6 en total) para dejar más margen bajo el límite duro
-            // de USD 1/tasación. Verificar costo real en Anthropic Console
-            // después del proximo deploy y ajustar si hace falta.
-            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
+            // tasación). El riesgo real de costo no es la CANTIDAD de
+            // llamadas sino que UNA llamada reintente varias veces (el
+            // contexto se acumula turno a turno dentro de la misma llamada).
+            // Por eso ahora: más llamadas en paralelo (5 en vez de 3, con más
+            // variedad de queries — ver BLOQUE 14 en buildQueries), pero cada
+            // una limitada a UNA sola búsqueda (max_uses:1). Así no hay
+            // reintentos que compounden costo dentro de una llamada, y se
+            // cubre más terreno (más portales/inmobiliarias) en vez de
+            // repetir la misma query. Verificar costo real en Anthropic
+            // Console después del proximo deploy.
+            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
             messages: [{ role: "user", content: searchPrompt }],
           })
         })
