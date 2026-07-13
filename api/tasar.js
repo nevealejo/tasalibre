@@ -172,7 +172,23 @@ async function getNearbyStreets(lat, lon, radius) {
   } catch { return []; }
 }
 
-async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCochera, esCerrado) {
+// BLOQUE 16: root-cause fix del problema "0 comparables" — antes esta función
+// pedía a TODA la red Tokko ("network", id 0) los primeros 40 objetos (orden
+// no geográfico) y recién ahí filtraba por si el nombre del barrio aparecía
+// como texto en location/address/título. Si ninguno de esos 40 al azar caía
+// cerca de la dirección buscada (lo más probable en un país entero), el
+// resultado era 0 — exactamente lo que pasó con Moreno 450, Quilmes, pese a
+// haber muchísimas propiedades reales cerca.
+// Fix en dos capas:
+//   1) Escopar la búsqueda del lado de Tokko a la localidad real (vía
+//      location/quicksearch, confirmado que funciona y devuelve IDs propios
+//      de Tokko) en vez de pedir la red completa — con fallback automático a
+//      red completa si el scoping no devuelve nada.
+//   2) Ordenar/filtrar los resultados por DISTANCIA REAL usando las
+//      coordenadas propias de cada propiedad (geo_lat/geo_long — confirmado
+//      que Tokko las devuelve en cada objeto) contra la propiedad tasada, en
+//      vez de depender solo del matching de texto por nombre de barrio.
+async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCochera, esCerrado, origenLat, origenLon) {
   try {
     const tokkoKey = process.env.TOKKO_API_KEY;
     if (!tokkoKey) return [];
@@ -180,27 +196,50 @@ async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCoch
     const tipoMap = { departamento:2, casa:3, ph:13, local:7, lote:1 };
     const opMap = { venta:1, alquiler:2 };
 
-    // Search data con network type para acceder a toda la red Tokko
-    const searchData = {
-      current_localization_id: 0,
-      current_localization_type: "network",
-      operation_types: [opMap[operacion]||1],
-      property_types: [tipoMap[tipo]||2],
-      price_from: 0,
-      price_to: 999999999,
-      currency: "USD",
-      filters: [],
-      with_tags: [],
-      without_tags: [],
-      with_custom_tags: [],
-    };
-
-    // Agregar filtro de superficie si existe
-    if (supTotal && parseInt(supTotal) > 0) {
-      const sup = parseInt(supTotal);
-      searchData.filters.push(["roofed_surface", ">=", Math.round(sup * 0.65).toString()]);
-      searchData.filters.push(["roofed_surface", "<=", Math.round(sup * 1.35).toString()]);
+    // Paso 1: intentar resolver el ID de localidad real de Tokko para escopar
+    // la búsqueda ahí en vez de en toda la red. Si falla o no encuentra nada,
+    // seguimos con el comportamiento anterior (red completa) sin cortar el flujo.
+    let localizationId = 0;
+    let localizationType = "network";
+    try {
+      const locCtrl = new AbortController();
+      setTimeout(() => locCtrl.abort(), 5000);
+      const locUrl = `https://www.tokkobroker.com/api/v1/location/quicksearch/?format=json&lang=es_ar&key=${tokkoKey}&q=${encodeURIComponent(barrio)}`;
+      const locRes = await fetch(locUrl, { signal: locCtrl.signal });
+      const locData = await locRes.json();
+      const candidatosLoc = locData.objects || [];
+      // Preferimos "Localidad" (ciudad/partido completo) sobre "Área" (region
+      // mas amplia) o "Barrio" (mas chico) para no acotar de mas ni de menos.
+      const match = candidatosLoc.find(l => l.type === "Localidad") || candidatosLoc[0];
+      if (match) {
+        localizationId = match.id;
+        localizationType = "location";
+      }
+    } catch (e) {
+      console.warn("Tokko location quicksearch fallo, sigue con red completa:", e.message);
     }
+
+    const buildSearchData = (locId, locType) => {
+      const sd = {
+        current_localization_id: locId,
+        current_localization_type: locType,
+        operation_types: [opMap[operacion]||1],
+        property_types: [tipoMap[tipo]||2],
+        price_from: 0,
+        price_to: 999999999,
+        currency: "USD",
+        filters: [],
+        with_tags: [],
+        without_tags: [],
+        with_custom_tags: [],
+      };
+      if (supTotal && parseInt(supTotal) > 0) {
+        const sup = parseInt(supTotal);
+        sd.filters.push(["roofed_surface", ">=", Math.round(sup * 0.65).toString()]);
+        sd.filters.push(["roofed_surface", "<=", Math.round(sup * 1.35).toString()]);
+      }
+      return sd;
+    };
 
     const params = new URLSearchParams({
       format: "json",
@@ -209,28 +248,49 @@ async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCoch
       limit: 40,
       offset: 0
     });
-
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 8000);
-
     const url = `https://www.tokkobroker.com/api/v1/property/search/?${params.toString()}`;
-    const res = await fetch(url, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: searchData })
+
+    const doSearch = async (sd) => {
+      const ctrl = new AbortController();
+      setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(url, {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: sd })
+      });
+      const data = await res.json();
+      return data.objects || [];
+    };
+
+    let objetos = await doSearch(buildSearchData(localizationId, localizationType));
+    console.log(`Tokko búsqueda (${localizationType}=${localizationId}): ${objetos.length} objetos`);
+
+    // Si el scoping por localidad no trajo nada (ID mal resuelto, localidad
+    // sin stock cargado, etc.), reintentamos una vez contra toda la red para
+    // no perder comparables por una falla de scoping.
+    if (objetos.length === 0 && localizationType !== "network") {
+      console.warn("Tokko: 0 resultados con localización escopada, reintentando con red completa");
+      objetos = await doSearch(buildSearchData(0, "network"));
+      console.log(`Tokko búsqueda (network, reintento): ${objetos.length} objetos`);
+    }
+
+    // Paso 2: distancia REAL con las coordenadas propias de cada propiedad.
+    const conDistancia = objetos.map(p => {
+      const lat = parseFloat(p.geo_lat);
+      const lon = parseFloat(p.geo_long);
+      const tieneCoords = Number.isFinite(lat) && Number.isFinite(lon) && (lat !== 0 || lon !== 0);
+      const dist = (tieneCoords && origenLat != null && origenLon != null)
+        ? distanciaKm(origenLat, origenLon, lat, lon)
+        : null;
+      return { p, dist };
     });
 
-    const data = await res.json();
-    const total = data.meta?.total_count || 0;
-    console.log(`Tokko returned ${total} total, ${(data.objects||[]).length} objects`);
-
-    // Filtrar por barrio/zona
-    // Barrio cerrado: exigir la FRASE COMPLETA del nombre (ej "nuevo quilmes") en ubicación,
-    // dirección o TÍTULO de la publicación — nunca palabras sueltas (matchearían toda la localidad).
+    // Matching de texto — se mantiene como red de contención para propiedades
+    // sin geo_lat/geo_long cargado, ya no como filtro principal.
     const barrioLower = barrio.toLowerCase().trim();
     const kw = barrioLower.split(" ").filter(w => w.length > 3);
-    const filtered = (data.objects || []).filter(p => {
+    const matchTexto = (p) => {
       const loc = [
         p.location?.name || "",
         p.location?.full_location || "",
@@ -239,15 +299,34 @@ async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCoch
         p.fake_address || ""
       ].join(" ").toLowerCase();
       return esCerrado ? loc.includes(barrioLower) : kw.some(w => loc.includes(w));
-    });
+    };
+
+    // Radio adaptativo por distancia real: 2km estricto, ampliar a 6km si hace
+    // falta, y solo como último recurso completar con matching de texto para
+    // las propiedades que no traen coordenadas cargadas.
+    const RADIO_ESTRICTO_KM = 2, RADIO_AMPLIO_KM = 6;
+    let candidatos = conDistancia.filter(x => x.dist != null && x.dist <= RADIO_ESTRICTO_KM);
+    if (candidatos.length < 3) {
+      candidatos = candidatos.concat(
+        conDistancia.filter(x => x.dist != null && x.dist > RADIO_ESTRICTO_KM && x.dist <= RADIO_AMPLIO_KM)
+      );
+    }
+    if (candidatos.length < 3) {
+      const yaIncluidos = new Set(candidatos.map(x => x.p.id));
+      const porTexto = conDistancia.filter(x => x.dist == null && !yaIncluidos.has(x.p.id) && matchTexto(x.p));
+      candidatos = candidatos.concat(porTexto);
+    }
+    candidatos.sort((a, b) => (a.dist ?? 999) - (b.dist ?? 999));
 
     // Filtrar por cochera si aplica
-    const withCochera = filtered.filter(p =>
+    const withCochera = candidatos.filter(({ p }) =>
       !conCochera || p.parking_lot_amount > 0 ||
       (p.tags || []).some(t => t.name?.toLowerCase().includes("cochera"))
     );
 
-    return withCochera.slice(0, 8).map(p => {
+    console.log(`Tokko comparables finales: ${withCochera.length} (con distancia real: ${withCochera.filter(x => x.dist != null).length})`);
+
+    return withCochera.slice(0, 8).map(({ p, dist }) => {
       const m2cubierto = p.roofed_surface || p.total_surface || 0;
       const precio = p.price || 0;
       const precioM2 = m2cubierto > 0 ? Math.round(precio / m2cubierto) : 0;
@@ -259,6 +338,7 @@ async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCoch
         precio_usd: precio,
         precio_m2: precioM2,
         moneda: p.currency || "USD",
+        distanciaKm: dist != null ? Math.round(dist * 100) / 100 : null,
         fuente: "Tokko Broker"
       };
     }).filter(p => p.precio_usd > 0 && p.m2 > 0);
@@ -290,10 +370,15 @@ export default async function handler(req, res) {
   if (req.body?._enrichOnly) {
     const { address, tipo, operacion, barrio, supTotal, conCochera, esCerrado, loteCentrico } = req.body._meta || {};
 
-    const [coords, tokkoComps] = await Promise.all([
-      address ? geocodeAddressConFallback(address) : Promise.resolve(null),
-      searchTokkoComparables(tipo, operacion, barrio, supTotal, conCochera, !!esCerrado)
-    ]);
+    // BLOQUE 16: antes esto corría en paralelo (Promise.all), así que Tokko
+    // nunca tenía las coordenadas de la propiedad tasada disponibles para
+    // calcular distancia real — geocodificamos primero y recién con esas
+    // coordenadas buscamos en Tokko, para poder filtrar/ordenar por cercanía real.
+    const coords = address ? await geocodeAddressConFallback(address) : null;
+    const tokkoComps = await searchTokkoComparables(
+      tipo, operacion, barrio, supTotal, conCochera, !!esCerrado,
+      coords?.lat ?? null, coords?.lon ?? null
+    );
 
     let streetContext = "";
     let streetsNearby = [];
@@ -323,9 +408,9 @@ export default async function handler(req, res) {
     if (tokkoComps.length > 0) {
       tokkoContext = (esCerrado
         ? `COMPARABLES REALES TOKKO VERIFICADOS DENTRO DEL BARRIO "${barrio}" (priorizar sobre cualquier otra fuente): `
-        : `COMPARABLES REALES TOKKO BROKER RED COMPLETA (priorizar sobre cualquier otra fuente): `) +
+        : `COMPARABLES REALES TOKKO BROKER CERCANOS (ordenados por distancia real, priorizar sobre cualquier otra fuente): `) +
         tokkoComps.map(c =>
-          `${c.direccion} - ${c.barrio} - ${c.m2}m² cubiertos - ${c.moneda} ${c.precio_usd.toLocaleString("es-AR")} - USD ${c.precio_m2}/m²`
+          `${c.direccion} - ${c.barrio}${c.distanciaKm != null ? ` (a ${c.distanciaKm}km)` : ""} - ${c.m2}m² cubiertos - ${c.moneda} ${c.precio_usd.toLocaleString("es-AR")} - USD ${c.precio_m2}/m²`
         ).join(" | ") + `. Usar estos precios/m² como base del cálculo. `;
     }
 
