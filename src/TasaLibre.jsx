@@ -768,7 +768,22 @@ function DireccionAutocomplete({ onSeleccion, placeholder }) {
 
   useEffect(() => {
     let cancelado = false;
-    loadGoogleMapsPlaces().then(async (ok) => {
+    let intentosEsperaElemento = 0;
+
+    // BLOQUE 17: fix de la condición de carrera reportada — en el PRIMER
+    // montaje de la página (con el tipo/ubicación por defecto), a veces
+    // window.google.maps.importLibrary("places") ya había resuelto la
+    // promesa pero el custom element PlaceAutocompleteElement todavía no
+    // estaba realmente registrado en el browser un instante después. Como
+    // antes había un solo chequeo y se abandonaba en silencio (console.warn
+    // + return, sin reintentar), el buscador desaparecía para siempre en esa
+    // instancia. Al cambiar de "Tipo" (Casa, etc.) React desmonta y crea una
+    // instancia NUEVA de este componente que, para entonces, ya encontraba
+    // todo listo — por eso "funcionaba" recién después de cambiar de opción.
+    // Ahora, si el elemento todavía no está listo, reintentamos con backoff
+    // corto (hasta 10 veces / 3s) en vez de rendirnos al primer intento.
+    async function intentarMontar() {
+      const ok = await loadGoogleMapsPlaces();
       if (cancelado || !ok || !containerRef.current || !window.google) return;
       try {
         if (window.google.maps.importLibrary) {
@@ -776,7 +791,12 @@ function DireccionAutocomplete({ onSeleccion, placeholder }) {
         }
         if (cancelado || !containerRef.current) return;
         if (!window.google.maps.places.PlaceAutocompleteElement) {
-          console.warn("PlaceAutocompleteElement no disponible en esta carga de Google Maps.");
+          if (intentosEsperaElemento < 10) {
+            intentosEsperaElemento++;
+            setTimeout(intentarMontar, 300);
+            return;
+          }
+          console.warn("PlaceAutocompleteElement no disponible tras varios reintentos.");
           return;
         }
         const pae = new window.google.maps.places.PlaceAutocompleteElement({
@@ -814,7 +834,10 @@ function DireccionAutocomplete({ onSeleccion, placeholder }) {
       } catch (e) {
         console.warn("No se pudo inicializar el buscador de direcciones de Google:", e);
       }
-    });
+    }
+
+    intentarMontar();
+
     return () => {
       cancelado = true;
       if (elRef.current && containerRef.current && containerRef.current.contains(elRef.current)) {
