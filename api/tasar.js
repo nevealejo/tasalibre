@@ -179,15 +179,17 @@ async function getNearbyStreets(lat, lon, radius) {
 // cerca de la dirección buscada (lo más probable en un país entero), el
 // resultado era 0 — exactamente lo que pasó con Moreno 450, Quilmes, pese a
 // haber muchísimas propiedades reales cerca.
-// Fix en dos capas:
-//   1) Escopar la búsqueda del lado de Tokko a la localidad real (vía
-//      location/quicksearch, confirmado que funciona y devuelve IDs propios
-//      de Tokko) en vez de pedir la red completa — con fallback automático a
-//      red completa si el scoping no devuelve nada.
-//   2) Ordenar/filtrar los resultados por DISTANCIA REAL usando las
-//      coordenadas propias de cada propiedad (geo_lat/geo_long — confirmado
-//      que Tokko las devuelve en cada objeto) contra la propiedad tasada, en
-//      vez de depender solo del matching de texto por nombre de barrio.
+// Fix: ordenar/filtrar los resultados por DISTANCIA REAL usando las
+// coordenadas propias de cada propiedad (geo_lat/geo_long — confirmado que
+// Tokko las devuelve en cada objeto) contra la propiedad tasada, en vez de
+// depender solo del matching de texto por nombre de barrio.
+// BLOQUE 17: se sacó el paso previo de escopar por location/quicksearch — esa
+// llamada extra (sin confirmar que Tokko realmente soporte
+// current_localization_type:"location") causó en producción un error real
+// ("Tokko error: Unexpected token 'G'... is not valid JSON", ver logs de
+// Vercel del 13/07 18:42) que tiró abajo TODA la búsqueda de Tokko, peor que
+// el problema original. Se vuelve a una sola llamada de red completa (ya
+// probada y estable) + el parseo de JSON ahora es defensivo en todos lados.
 async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCochera, esCerrado, origenLat, origenLon) {
   try {
     const tokkoKey = process.env.TOKKO_API_KEY;
@@ -196,50 +198,24 @@ async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCoch
     const tipoMap = { departamento:2, casa:3, ph:13, local:7, lote:1 };
     const opMap = { venta:1, alquiler:2 };
 
-    // Paso 1: intentar resolver el ID de localidad real de Tokko para escopar
-    // la búsqueda ahí en vez de en toda la red. Si falla o no encuentra nada,
-    // seguimos con el comportamiento anterior (red completa) sin cortar el flujo.
-    let localizationId = 0;
-    let localizationType = "network";
-    try {
-      const locCtrl = new AbortController();
-      setTimeout(() => locCtrl.abort(), 5000);
-      const locUrl = `https://www.tokkobroker.com/api/v1/location/quicksearch/?format=json&lang=es_ar&key=${tokkoKey}&q=${encodeURIComponent(barrio)}`;
-      const locRes = await fetch(locUrl, { signal: locCtrl.signal });
-      const locData = await locRes.json();
-      const candidatosLoc = locData.objects || [];
-      // Preferimos "Localidad" (ciudad/partido completo) sobre "Área" (region
-      // mas amplia) o "Barrio" (mas chico) para no acotar de mas ni de menos.
-      const match = candidatosLoc.find(l => l.type === "Localidad") || candidatosLoc[0];
-      if (match) {
-        localizationId = match.id;
-        localizationType = "location";
-      }
-    } catch (e) {
-      console.warn("Tokko location quicksearch fallo, sigue con red completa:", e.message);
-    }
-
-    const buildSearchData = (locId, locType) => {
-      const sd = {
-        current_localization_id: locId,
-        current_localization_type: locType,
-        operation_types: [opMap[operacion]||1],
-        property_types: [tipoMap[tipo]||2],
-        price_from: 0,
-        price_to: 999999999,
-        currency: "USD",
-        filters: [],
-        with_tags: [],
-        without_tags: [],
-        with_custom_tags: [],
-      };
-      if (supTotal && parseInt(supTotal) > 0) {
-        const sup = parseInt(supTotal);
-        sd.filters.push(["roofed_surface", ">=", Math.round(sup * 0.65).toString()]);
-        sd.filters.push(["roofed_surface", "<=", Math.round(sup * 1.35).toString()]);
-      }
-      return sd;
+    const searchData = {
+      current_localization_id: 0,
+      current_localization_type: "network",
+      operation_types: [opMap[operacion]||1],
+      property_types: [tipoMap[tipo]||2],
+      price_from: 0,
+      price_to: 999999999,
+      currency: "USD",
+      filters: [],
+      with_tags: [],
+      without_tags: [],
+      with_custom_tags: [],
     };
+    if (supTotal && parseInt(supTotal) > 0) {
+      const sup = parseInt(supTotal);
+      searchData.filters.push(["roofed_surface", ">=", Math.round(sup * 0.65).toString()]);
+      searchData.filters.push(["roofed_surface", "<=", Math.round(sup * 1.35).toString()]);
+    }
 
     const params = new URLSearchParams({
       format: "json",
@@ -250,32 +226,31 @@ async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCoch
     });
     const url = `https://www.tokkobroker.com/api/v1/property/search/?${params.toString()}`;
 
-    const doSearch = async (sd) => {
-      const ctrl = new AbortController();
-      setTimeout(() => ctrl.abort(), 8000);
-      const res = await fetch(url, {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: sd })
-      });
-      const data = await res.json();
-      return data.objects || [];
-    };
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(url, {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: searchData })
+    });
 
-    let objetos = await doSearch(buildSearchData(localizationId, localizationType));
-    console.log(`Tokko búsqueda (${localizationType}=${localizationId}): ${objetos.length} objetos`);
-
-    // Si el scoping por localidad no trajo nada (ID mal resuelto, localidad
-    // sin stock cargado, etc.), reintentamos una vez contra toda la red para
-    // no perder comparables por una falla de scoping.
-    if (objetos.length === 0 && localizationType !== "network") {
-      console.warn("Tokko: 0 resultados con localización escopada, reintentando con red completa");
-      objetos = await doSearch(buildSearchData(0, "network"));
-      console.log(`Tokko búsqueda (network, reintento): ${objetos.length} objetos`);
+    // Parseo defensivo: si Tokko devuelve algo que no es JSON (error de su
+    // WAF, timeout parcial, HTML de error, etc.) no queremos que reviente
+    // TODA la función — logueamos el texto crudo (recortado) para poder
+    // diagnosticar, y devolvemos sin comparables de Tokko en vez de tirar.
+    const rawText = await res.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      console.error(`Tokko: respuesta no-JSON (status ${res.status}): ${rawText.slice(0, 200)}`);
+      return [];
     }
+    const objetos = data.objects || [];
+    console.log(`Tokko búsqueda (network): ${objetos.length} objetos, total_count=${data.meta?.total_count ?? "?"}`);
 
-    // Paso 2: distancia REAL con las coordenadas propias de cada propiedad.
+    // Distancia REAL con las coordenadas propias de cada propiedad.
     const conDistancia = objetos.map(p => {
       const lat = parseFloat(p.geo_lat);
       const lon = parseFloat(p.geo_long);
