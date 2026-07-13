@@ -790,8 +790,15 @@ function DireccionAutocomplete({ onSeleccion, placeholder }) {
           await window.google.maps.importLibrary("places");
         }
         if (cancelado || !containerRef.current) return;
-        if (!window.google.maps.places.PlaceAutocompleteElement) {
-          if (intentosEsperaElemento < 10) {
+        // BLOQUE 19: en producción se vio "TypeError: Cannot read properties
+        // of undefined (reading 'PlaceAutocompleteElement')" — el chequeo
+        // anterior (window.google.maps.places.PlaceAutocompleteElement) tiraba
+        // él mismo esa excepción cuando "places" TODAVÍA no existía como
+        // objeto (no solo la clase de adentro), y eso se escapaba directo al
+        // catch de abajo sin pasar por el reintento. Con "?." ya no tira, así
+        // que el reintento de acá abajo sí se activa como corresponde.
+        if (!window.google.maps.places?.PlaceAutocompleteElement) {
+          if (intentosEsperaElemento < 15) {
             intentosEsperaElemento++;
             setTimeout(intentarMontar, 300);
             return;
@@ -832,6 +839,14 @@ function DireccionAutocomplete({ onSeleccion, placeholder }) {
           }
         });
       } catch (e) {
+        // Defensa adicional: cualquier otra excepción inesperada durante la
+        // inicialización (no solo el caso de PlaceAutocompleteElement de
+        // arriba) también reintenta en vez de rendirse en el primer intento.
+        if (intentosEsperaElemento < 15) {
+          intentosEsperaElemento++;
+          setTimeout(intentarMontar, 300);
+          return;
+        }
         console.warn("No se pudo inicializar el buscador de direcciones de Google:", e);
       }
     }
