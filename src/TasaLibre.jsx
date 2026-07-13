@@ -506,17 +506,24 @@ function normalizarTexto(s) {
 // geocodificar un texto que no tiene pinta de direccion real).
 function extraerDireccion(linea) {
   if (!linea) return null;
+  // BLOQUE 15: el texto real (resultados de busqueda web, no datos
+  // estructurados) casi nunca escribe "Calle 1234" pegado — es mas comun
+  // "Calle, 1234", "Calle Nº1234", "Calle nro. 1234" o "Calle altura 1234".
+  // La version anterior exigia el numero PEGADO con solo un espacio, asi
+  // que perdia la gran mayoria de los candidatos reales (en una prueba,
+  // solo 2 de 14). CONECTOR tolera lo que puede ir en el medio.
+  const CONECTOR = "(?:,|n[º°]\\.?|nro\\.?|altura)?\\s*";
   const patrones = [
-    // Calles que empiezan con numero: "9 de Julio 63", "25 de Mayo 800", "3 de Febrero 120"
-    /(\d{1,2}\s+de\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+\d{2,5})\b/,
+    // Calles que empiezan con numero: "9 de Julio 63", "25 de Mayo, Nº 800"
+    new RegExp("(\\d{1,2}\\s+de\\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\\s*" + CONECTOR + "(\\d{2,5})\\b"),
     // Avenida/Av. + nombre (1-3 palabras) + numero
-    /((?:Av(?:enida)?\.?\s+)[A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ.]*(?:\s[A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ]*){0,2}\s+\d{2,5})\b/,
-    // Nombre propio (1-3 palabras, con conectores de/del/la/las/los permitidos) + numero
-    /([A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ]*(?:\s(?:de|del|la|las|los)?\s?[A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ]*){0,2}\s+\d{2,5})\b/,
+    new RegExp("((?:Av(?:enida)?\\.?\\s+)[A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ.]*(?:\\s[A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ]*){0,2})\\s*" + CONECTOR + "(\\d{2,5})\\b"),
+    // Nombre propio (1-4 palabras, con conectores de/del/la/las/los/y permitidos) + numero
+    new RegExp("([A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ]*(?:\\s(?:de|del|la|las|los|y)?\\s?[A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ]*){0,3})\\s*" + CONECTOR + "(\\d{2,5})\\b"),
   ];
   for (const re of patrones) {
     const m = linea.match(re);
-    if (m) return m[1].replace(/\s+/g, " ").trim();
+    if (m) return (m[1] + " " + m[2]).replace(/\s+/g, " ").trim();
   }
   return null;
 }
@@ -700,6 +707,100 @@ function calibrarConfianzaConHistorico(confianzaBase, errorPromedioHistoricoBuck
   const score = Math.max(0, Math.min(100, confianzaBase.score - penalizacion));
   const nivel = score >= 75 ? "alta" : score >= 50 ? "media" : "baja";
   return { score, nivel };
+}
+
+// ── Google Places Autocomplete (buscador de dirección estilo Uber) ─────────
+// Clave de navegador restringida por HTTP referrer a tasalibre.com/* y
+// www.tasalibre.com/*, y por API a "Places API" + "Places API (New)" — no
+// sirve para nada fuera de ese dominio. Ver Google Cloud Console > Credenciales.
+const GOOGLE_MAPS_BROWSER_KEY = "AIzaSyARpptIFtAthVtFN5F6RyNebKRfzsfXoLw";
+let _googleMapsLoadPromise = null;
+function loadGoogleMapsPlaces() {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  if (window.google && window.google.maps && window.google.maps.places) return Promise.resolve(true);
+  if (_googleMapsLoadPromise) return _googleMapsLoadPromise;
+  _googleMapsLoadPromise = new Promise((resolve) => {
+    try {
+      const script = document.createElement("script");
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_BROWSER_KEY}&libraries=places&language=es&region=AR`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    } catch (e) { resolve(false); }
+  });
+  return _googleMapsLoadPromise;
+}
+
+// Mapea la provincia/estado que devuelve Google al set fijo de opciones del form.
+function mapearProvinciaGoogle(nombreLargo) {
+  const n = (nombreLargo || "").toLowerCase();
+  if (n.includes("ciudad autónoma") || n.includes("ciudad autonoma") || n.includes("caba")) return "CABA";
+  if (n.includes("buenos aires")) return "Buenos Aires";
+  if (n.includes("córdoba") || n.includes("cordoba")) return "Córdoba";
+  if (n.includes("santa fe")) return "Santa Fe";
+  if (n.includes("mendoza")) return "Mendoza";
+  if (n.includes("tucumán") || n.includes("tucuman")) return "Tucumán";
+  return "Otra";
+}
+
+// Input de búsqueda de dirección con autocompletado de Google (tipo Uber):
+// el usuario escribe la calle y elige de un menú con localidad/provincia ya
+// resueltas — así evitamos direcciones ambiguas o mal tipeadas en el origen.
+function DireccionAutocomplete({ onSeleccion, placeholder }) {
+  const inputRef = useRef(null);
+  const autocompleteRef = useRef(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    loadGoogleMapsPlaces().then((ok) => {
+      if (cancelado || !ok || !inputRef.current || !window.google) return;
+      try {
+        const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
+          componentRestrictions: { country: "ar" },
+          fields: ["address_components", "geometry", "formatted_address"],
+          types: ["address"],
+        });
+        ac.addListener("place_changed", () => {
+          const place = ac.getPlace();
+          if (!place || !place.address_components) return;
+          const comp = {};
+          place.address_components.forEach((c) => {
+            (c.types || []).forEach((t) => { comp[t] = c.long_name; });
+          });
+          const loc = place.geometry && place.geometry.location ? place.geometry.location : null;
+          onSeleccion({
+            calle: comp.route || "",
+            numero: comp.street_number || "",
+            barrio: comp.sublocality_level_1 || comp.sublocality || comp.locality || "",
+            provincia: mapearProvinciaGoogle(comp.administrative_area_level_1 || ""),
+            lat: loc ? loc.lat() : null,
+            lon: loc ? loc.lng() : null,
+            formatted: place.formatted_address || "",
+          });
+        });
+        autocompleteRef.current = ac;
+      } catch (e) {
+        console.warn("No se pudo inicializar Google Places Autocomplete:", e);
+      }
+    });
+    return () => {
+      cancelado = true;
+      if (autocompleteRef.current && window.google && window.google.maps) {
+        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      autoComplete="off"
+      placeholder={placeholder || "Escribí la calle y el número..."}
+    />
+  );
 }
 
 export default function TasaLibre() {
@@ -1535,6 +1636,11 @@ export default function TasaLibre() {
       // extracción y el filtro usan siempre la misma clave.
       const direccionPorLinea = new Map(candidatosAbiertos.map(l => [l, extraerDireccion(l)]));
       console.log(`[BLOQUE12] candidatosAbiertos=${candidatosAbiertos.length}, con direccion extraible=${[...direccionPorLinea.values()].filter(Boolean).length}`);
+      // Log de diagnostico: texto crudo de las lineas que NO matchearon
+      // ningun patron de extraerDireccion, para poder ajustar la regex con
+      // casos reales en vez de a ciegas.
+      const sinDireccion = candidatosAbiertos.filter(l => !direccionPorLinea.get(l));
+      if (sinDireccion.length) console.log("[BLOQUE12] sin direccion extraible (muestra):", JSON.stringify(sinDireccion.slice(0, 6).map(l => l.slice(0, 150))));
       if (!esCerradoSearch && coordsPropiedad && candidatosAbiertos.length > 0) {
         try {
           const direccionesCandidatas = [...new Set([...direccionPorLinea.values()].filter(Boolean))];
@@ -1648,9 +1754,9 @@ export default function TasaLibre() {
         comparablesCtx + "\n" +
         (esCerradoSearch && (casaNombreBarrio||nombreBarrioPrivado)
           ? "REGLAS BARRIO CERRADO: 1)REGLA DE ORO: usar SOLO comparables cuyo TITULO de publicacion original mencione explicitamente \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\"" + (sectorBarrio ? " Y TAMBIEN el sector/complejo \"" + sectorBarrio + "\"" : "") + " (los vendedores SIEMPRE ponen el nombre del barrio cerrado en el titulo porque es el argumento de venta; si el titulo no lo nombra, la propiedad NO es del barrio)." + (sectorBarrio ? " 1b)CRITICO SECTOR: el barrio \"" + (casaNombreBarrio||nombreBarrioPrivado) + "\" tiene VARIOS complejos/sectores internos con precios MUY diferentes entre si (a veces 30-50% de diferencia). NUNCA promediar comparables de otro sector distinto a \"" + sectorBarrio + "\" aunque esten dentro del mismo barrio cerrado — son productos distintos." : "") + " 2)PROHIBIDO usar propiedades fuera del perimetro aunque esten geograficamente cerca o en la misma localidad/partido: el m2 dentro del barrio cerrado vale 2-4 veces mas que afuera. 3)Antes de incluir un comparable en el JSON final, releelo: si su titulo NO tiene el nombre del barrio" + (sectorBarrio ? " Y el sector" : "") + ", NO LO INCLUYAS. 4)BASE DE CALCULO: el promedio de precio/m2 (sobre m2 CUBIERTOS) de los comparables con titulo verificado del MISMO TIPO es SIEMPRE la base principal. Un 'precio medio zonal' estadistico que aparezca en el contexto NUNCA es base: solo sirve como verificacion de coherencia (si tu promedio difiere mucho, revisa los comparables, pero decide con las publicaciones reales). 5)TIPO IMPORTA: dentro del mismo barrio cerrado, los DEPARTAMENTOS (especialmente a estrenar o recientes) valen 20-40% MAS por m2 que las casas. Si tasas un departamento y solo hay comparables de casas, ajusta hacia arriba. Si tasas una casa y solo hay deptos, ajusta hacia abajo. 6)SANITY CHECK FINAL: el precio/m2 resultante en un barrio cerrado consolidado NUNCA puede quedar por debajo de 1.5 veces el m2 de la localidad abierta circundante. Si tu calculo da menos, esta MAL: revisalo usando los comparables del barrio. 7)Si hay pocos comparables validos del barrio" + (sectorBarrio ? "/sector" : "") + ", usar barrios cerrados de categoria EQUIVALENTE en la misma zona, NUNCA barrio abierto. 8)Rango+-5%. 9)Si el contexto incluye una 'ANCLA CALCULADA POR CODIGO', esa cifra fue calculada matematicamente por el sistema (no por vos) a partir de los mismos comparables, y es mas confiable que tu propia lectura del texto: tu precio_m2_usd final debe estar dentro de +-20% de esa ancla, salvo justificacion explicita en el analisis.\n"
-          : "REGLAS: 1)BASE DE CALCULO: precio_base_m2_usd es el promedio de precio/m2 (sobre m2 CUBIERTOS) de los comparables reales encontrados en la busqueda para " + address + " y su zona inmediata — NUNCA un valor de memoria, tope regional fijo, ni comparacion con otras zonas (CABA u otras). 2)Priorizar los 6 comparables MAS CERCANOS a " + address + " por sobre cualquier otro. 3)Si el contexto incluye una 'ANCLA CALCULADA POR CODIGO', tu precio_base_m2_usd debe estar dentro de +-20% de esa cifra, salvo justificacion explicita en el analisis. 4)Rango+-5%. 5)CONSERVADOR: ante pocos comparables, preferir un valor mas bajo antes que sobreestimar." + (streetsNearby && streetsNearby.length
-            ? " 6)CRITICO PROXIMIDAD (fuente de verdad = geolocalizacion): la direccion fue geolocalizada; sus calles reales mas cercanas son: " + streetsNearby.slice(0, 6).join(", ") + ". En el campo 'comparables' final, priorizá publicaciones sobre esas calles o muy cerca de ellas por sobre cualquier otra. Si una publicacion queda lejos de esas calles aunque figure en la misma ciudad/localidad, no la uses como referencia principal."
-            : (barrio && barrio.trim() ? " 6)CRITICO SUBZONA: la propiedad esta en \"" + barrio + "\". Si ese nombre tiene un calificativo propio (Centro, Oeste, Norte, Sur, Este), en el campo 'comparables' final NUNCA incluyas publicaciones de otra subzona distinta de la misma ciudad, aunque el texto de busqueda las mencione — son mercados con precios diferentes." : "")) + "\n") +
+          : "REGLAS: 1)BASE DE CALCULO: precio_base_m2_usd es el promedio de precio/m2 (sobre m2 CUBIERTOS) de los comparables reales encontrados en la busqueda para " + address + " y su zona inmediata — NUNCA un valor de memoria, tope regional fijo, ni comparacion con otras zonas (CABA u otras). 2)Priorizar los 6 comparables MAS CERCANOS a " + address + " por sobre cualquier otro. 3)Si el contexto incluye una 'ANCLA CALCULADA POR CODIGO', tu precio_base_m2_usd debe estar dentro de +-20% de esa cifra, salvo justificacion explicita en el analisis. 4)Rango+-5%. 5)CONSERVADOR: ante pocos comparables, preferir un valor mas bajo antes que sobreestimar. 6)NO DEJES 'comparables' VACIO SI HAY DATOS: si tu propia busqueda o el contexto 'COMPARABLES' de mas arriba mencionan aunque sea 1 o 2 publicaciones reales con direccion+precio+m2, INCLUILAS en el campo 'comparables' del JSON final — no las omitas ni devuelvas el array vacio solo porque son pocas; pocas publicaciones reales son mejores que ninguna. Recien devolvé 'comparables' vacio si genuinamente no encontraste NINGUNA publicacion con datos suficientes." + (streetsNearby && streetsNearby.length
+            ? " 7)CRITICO PROXIMIDAD (fuente de verdad = geolocalizacion): la direccion fue geolocalizada; sus calles reales mas cercanas son: " + streetsNearby.slice(0, 6).join(", ") + ". En el campo 'comparables' final, priorizá publicaciones sobre esas calles o muy cerca de ellas por sobre cualquier otra. Si una publicacion queda lejos de esas calles aunque figure en la misma ciudad/localidad, no la uses como referencia principal."
+            : (barrio && barrio.trim() ? " 7)CRITICO SUBZONA: la propiedad esta en \"" + barrio + "\". Si ese nombre tiene un calificativo propio (Centro, Oeste, Norte, Sur, Este), en el campo 'comparables' final NUNCA incluyas publicaciones de otra subzona distinta de la misma ciudad, aunque el texto de busqueda las mencione — son mercados con precios diferentes." : "")) + "\n") +
         (tipo === "lote" && loteSubtipo === "urbano" && loteEntorno === "centrico"
           ? "REGLAS LOTE CENTRICO (edificabilidad): 1)Este lote esta en zona centrica/sobre avenida: su valor lo define el POTENCIAL CONSTRUCTIVO, no el m2 residencial. 2)BASE: usar comparables marcados [DESARROLLO] o que mencionen 'apto edificio/desarrollo/emprendimiento' o zonificacion (R2, R3, C, FOT); los [RESIDENCIAL] solo sirven como PISO minimo. 3)Si los comparables traen zonificacion/FOT, mencionalos en el analisis. 4)SANITY CHECK: un lote centrico NUNCA vale menos por m2 que el promedio de lotes residenciales de la misma localidad; si tu calculo da menos, esta MAL. 5)Si no hay comparables apto desarrollo en el contexto, usa los residenciales como piso y aplica un premium de zona centrica de +30-60% segun cuan comercial sea la ubicacion, aclarandolo en el analisis. 6)En el campo analisis, aclarar SIEMPRE que el valor definitivo de un lote centrico depende de la zonificacion municipal (FOS/FOT) y recomendar verificarla en el municipio antes de decidir.\n"
           : "") +
@@ -2100,6 +2206,15 @@ export default function TasaLibre() {
                         <div className={"chip"+(loteEntorno==="centrico"?" on":"")} onClick={()=>setLoteEntorno("centrico")}>Zona céntrica / sobre avenida</div>
                       </div>
                     </div>
+                    <div className="field"><label>Buscar dirección <span style={{color:"var(--ink-4)",fontWeight:400}}>(escribí la calle y elegí de la lista)</span></label>
+                      <DireccionAutocomplete placeholder="ej. Mitre 1200, Quilmes" onSeleccion={(d)=>{
+                        if (d.calle) setCalle(d.calle);
+                        if (d.numero) setNumero(d.numero);
+                        if (d.barrio) setBarrio(d.barrio);
+                        if (d.provincia) setProvincia(d.provincia);
+                        setErrBarrio(false);
+                      }}/>
+                    </div>
                     <div className="field"><label>Barrio / Localidad *</label>
                       <input value={barrio} onChange={e=>setBarrio(e.target.value)} placeholder="ej. Quilmes Centro, Lanús..."/>
                       {errBarrio && <div className="err">Ingresá el barrio.</div>}
@@ -2185,6 +2300,15 @@ export default function TasaLibre() {
 
                 {tipo==="casa" && casaSubtipo==="tradicional" && (
                   <>
+                    <div className="field"><label>Buscar dirección <span style={{color:"var(--ink-4)",fontWeight:400}}>(escribí la calle y elegí de la lista)</span></label>
+                      <DireccionAutocomplete placeholder="ej. Av. Santa Fe 3240, CABA" onSeleccion={(d)=>{
+                        if (d.calle) setCalle(d.calle);
+                        if (d.numero) setNumero(d.numero);
+                        if (d.barrio) setBarrio(d.barrio);
+                        if (d.provincia) setProvincia(d.provincia);
+                        setErrBarrio(false);
+                      }}/>
+                    </div>
                     <div className="field"><label>Barrio / Localidad *</label>
                       <input value={barrio} onChange={e=>setBarrio(e.target.value)} placeholder="ej. Palermo, Quilmes Centro..."/>
                       {errBarrio && <div className="err">Ingresá el barrio.</div>}
@@ -2210,6 +2334,15 @@ export default function TasaLibre() {
 
                 {(tipo==="ph" || tipo==="local" || (tipo==="departamento" && deptoSubtipo==="tradicional")) && (
                   <>
+                    <div className="field"><label>Buscar dirección <span style={{color:"var(--ink-4)",fontWeight:400}}>(escribí la calle y elegí de la lista)</span></label>
+                      <DireccionAutocomplete placeholder="ej. Av. Santa Fe 3240, CABA" onSeleccion={(d)=>{
+                        if (d.calle) setCalle(d.calle);
+                        if (d.numero) setNumero(d.numero);
+                        if (d.barrio) setBarrio(d.barrio);
+                        if (d.provincia) setProvincia(d.provincia);
+                        setErrBarrio(false);
+                      }}/>
+                    </div>
                     <div className="field"><label>Barrio / Localidad *</label>
                       <input value={barrio} onChange={e=>setBarrio(e.target.value)} placeholder="ej. Palermo, Quilmes Centro..."/>
                       {errBarrio && <div className="err">Ingresá el barrio.</div>}
