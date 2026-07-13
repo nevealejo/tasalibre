@@ -1,3 +1,5 @@
+import { randomUUID } from "crypto";
+
 const SUPABASE_URL = "https://qhojftormgvcdncaaftx.supabase.co";
 
 // ── Notificación WhatsApp al admin vía CallMeBot ──────────────────────────
@@ -74,7 +76,16 @@ export default async function handler(req, res) {
       return Number.isFinite(n) ? n : null;
     };
 
+    // BLOQUE 18: causa raíz REAL del bug de leads perdidos, confirmada en
+    // Vercel Logs del 13/07: "null value in column \"id\" of relation
+    // \"leads\" violates not-null constraint" — la columna id de la tabla no
+    // tiene un DEFAULT (gen_random_uuid()) configurado en Supabase, así que
+    // CUALQUIER insert que no mande id explícito fallaba siempre. El
+    // auto-reintento del BLOQUE 15 no alcanzaba a arreglarlo porque reintentaba
+    // con id="" (string vacío), que tampoco es un uuid válido. Se genera el
+    // id acá mismo, sin depender de que Supabase lo autogenere.
     const payload = {
+      id: randomUUID(),
       nombre: (nombre || "Sin nombre").slice(0, 120),
       whatsapp: (whatsapp || "").slice(0, 30),
       tipo: tipo || "",
