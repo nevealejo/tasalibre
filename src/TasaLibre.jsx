@@ -230,6 +230,8 @@ const styles = `
     background-color: var(--white); padding-right: 36px; cursor: pointer;
   }
   .field select option { background: var(--white); color: var(--ink); }
+  .gmp-autocomplete-wrap { width: 100%; }
+  .gmp-autocomplete-wrap gmp-place-autocomplete { width: 100%; display: block; }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 
@@ -722,9 +724,11 @@ function loadGoogleMapsPlaces() {
   _googleMapsLoadPromise = new Promise((resolve) => {
     try {
       const script = document.createElement("script");
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_BROWSER_KEY}&libraries=places&language=es&region=AR`;
+      // loading=async es imprescindible: sin este parámetro en la URL (distinto
+      // del atributo HTML async), el elemento nuevo PlaceAutocompleteElement
+      // falla al construirse (TypeError interno "reading 'keys'").
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_BROWSER_KEY}&libraries=places&language=es&region=AR&loading=async`;
       script.async = true;
-      script.defer = true;
       script.onload = () => resolve(true);
       script.onerror = () => resolve(false);
       document.head.appendChild(script);
@@ -748,59 +752,72 @@ function mapearProvinciaGoogle(nombreLargo) {
 // Input de búsqueda de dirección con autocompletado de Google (tipo Uber):
 // el usuario escribe la calle y elige de un menú con localidad/provincia ya
 // resueltas — así evitamos direcciones ambiguas o mal tipeadas en el origen.
+// Usa el elemento nuevo (PlaceAutocompleteElement) en vez del widget legacy
+// google.maps.places.Autocomplete: ese legacy widget ya no está disponible
+// para proyectos/API keys nuevos (deprecado desde marzo 2025) y no funcionaba
+// en producción — confirmado en vivo antes de este cambio.
 function DireccionAutocomplete({ onSeleccion, placeholder }) {
-  const inputRef = useRef(null);
-  const autocompleteRef = useRef(null);
+  const containerRef = useRef(null);
+  const elRef = useRef(null);
 
   useEffect(() => {
     let cancelado = false;
-    loadGoogleMapsPlaces().then((ok) => {
-      if (cancelado || !ok || !inputRef.current || !window.google) return;
+    loadGoogleMapsPlaces().then(async (ok) => {
+      if (cancelado || !ok || !containerRef.current || !window.google) return;
       try {
-        const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
-          componentRestrictions: { country: "ar" },
-          fields: ["address_components", "geometry", "formatted_address"],
-          types: ["address"],
+        if (window.google.maps.importLibrary) {
+          await window.google.maps.importLibrary("places");
+        }
+        if (cancelado || !containerRef.current) return;
+        if (!window.google.maps.places.PlaceAutocompleteElement) {
+          console.warn("PlaceAutocompleteElement no disponible en esta carga de Google Maps.");
+          return;
+        }
+        const pae = new window.google.maps.places.PlaceAutocompleteElement({
+          includedRegionCodes: ["ar"],
         });
-        ac.addListener("place_changed", () => {
-          const place = ac.getPlace();
-          if (!place || !place.address_components) return;
-          const comp = {};
-          place.address_components.forEach((c) => {
-            (c.types || []).forEach((t) => { comp[t] = c.long_name; });
-          });
-          const loc = place.geometry && place.geometry.location ? place.geometry.location : null;
-          onSeleccion({
-            calle: comp.route || "",
-            numero: comp.street_number || "",
-            barrio: comp.sublocality_level_1 || comp.sublocality || comp.locality || "",
-            provincia: mapearProvinciaGoogle(comp.administrative_area_level_1 || ""),
-            lat: loc ? loc.lat() : null,
-            lon: loc ? loc.lng() : null,
-            formatted: place.formatted_address || "",
-          });
+        pae.style.width = "100%";
+        if (placeholder) {
+          try { pae.placeholder = placeholder; } catch (e) {}
+        }
+        containerRef.current.appendChild(pae);
+        elRef.current = pae;
+        pae.addEventListener("gmp-select", async (event) => {
+          try {
+            const placePrediction = event.placePrediction;
+            const place = placePrediction.toPlace();
+            await place.fetchFields({ fields: ["addressComponents", "location", "formattedAddress"] });
+            const comp = {};
+            (place.addressComponents || []).forEach((c) => {
+              (c.types || []).forEach((t) => { comp[t] = c.longText; });
+            });
+            const loc = place.location;
+            onSeleccion({
+              calle: comp.route || "",
+              numero: comp.street_number || "",
+              barrio: comp.sublocality_level_1 || comp.sublocality || comp.locality || "",
+              provincia: mapearProvinciaGoogle(comp.administrative_area_level_1 || ""),
+              lat: loc ? (typeof loc.lat === "function" ? loc.lat() : loc.lat) : null,
+              lon: loc ? (typeof loc.lng === "function" ? loc.lng() : loc.lng) : null,
+              formatted: place.formattedAddress || "",
+            });
+          } catch (e) {
+            console.warn("Error al procesar la dirección seleccionada:", e);
+          }
         });
-        autocompleteRef.current = ac;
       } catch (e) {
-        console.warn("No se pudo inicializar Google Places Autocomplete:", e);
+        console.warn("No se pudo inicializar el buscador de direcciones de Google:", e);
       }
     });
     return () => {
       cancelado = true;
-      if (autocompleteRef.current && window.google && window.google.maps) {
-        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+      if (elRef.current && containerRef.current && containerRef.current.contains(elRef.current)) {
+        containerRef.current.removeChild(elRef.current);
       }
     };
   }, []);
 
-  return (
-    <input
-      ref={inputRef}
-      type="text"
-      autoComplete="off"
-      placeholder={placeholder || "Escribí la calle y el número..."}
-    />
-  );
+  return <div ref={containerRef} className="gmp-autocomplete-wrap"></div>;
 }
 
 export default function TasaLibre() {
