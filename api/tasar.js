@@ -27,7 +27,14 @@ async function checkRateLimit(ip) {
     }
 
     const count = rows[0].count || 0;
-    if (count >= 36) return false; // 4 tasaciones × hasta 9 llamadas
+    // BLOQUE 19b: subido TEMPORALMENTE de 36 a 150 mientras estamos probando
+    // en vivo el fix de comparables/Tokko (13/07) — entre las pruebas tuyas y
+    // las mías ya habíamos agotado el límite de 36/día, lo que hacía fallar
+    // la tasación con "Alcanzaste el límite" y no dejaba ver si el fix real
+    // funcionaba. BAJAR ESTO DE NUEVO a 36 (o el valor que prefieras) una vez
+    // terminada la etapa de pruebas, para que siga cumpliendo su función de
+    // control de costos en producción real.
+    if (count >= 150) return false;
 
     await fetch(`${SUPABASE_URL}/rest/v1/rate_limits?ip=eq.${encodeURIComponent(ip)}&fecha=eq.${hoy}`, {
       method: "PATCH",
