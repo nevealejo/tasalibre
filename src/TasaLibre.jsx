@@ -1461,7 +1461,7 @@ export default function TasaLibre() {
       // descarta cualquiera que quede a más de RADIO_MAX_KM de la propiedad.
       // Si el geocode de la propiedad falló, o si esta llamada falla, se usa
       // tal cual lo que ya pasó el filtro de texto (mismo respaldo de antes).
-      const RADIO_MAX_KM = 1.5;
+      const RADIO_MAX_KM = 0.8;
       let candidatosVerificados = candidatosAbiertos;
       if (!esCerradoSearch && coordsPropiedad && candidatosAbiertos.length > 0) {
         try {
@@ -1482,17 +1482,20 @@ export default function TasaLibre() {
             }),
           });
           const geoData = await geoRes.json();
-          const cercanas = new Set(
-            (geoData.resultados || [])
-              .filter(r => r.distanciaKm != null && r.distanciaKm <= RADIO_MAX_KM)
-              .map(r => normalizarTexto(r.direccion))
+          const distanciaPorDireccion = new Map(
+            (geoData.resultados || []).map(r => [normalizarTexto(r.direccion), r.distanciaKm])
           );
-          if (cercanas.size > 0) {
-            candidatosVerificados = candidatosAbiertos.filter(l => cercanas.has(normalizarTexto((l.split(" | ")[0] || "").trim())));
-          }
-          // Si cercanas.size === 0 (ningún geocode dio distancia válida), se
-          // mantiene el respaldo por texto en vez de vaciar todo — más vale
-          // un dato aproximado que ningún comparable.
+          // Por-item, y ESTRICTO: solo se mantiene un candidato si el geocode
+          // confirmó una distancia real y precisa (altura/numeración, no
+          // sólo la calle o la zona) dentro de RADIO_MAX_KM. Si no se pudo
+          // geocodificar, o el geocode fue impreciso (server devuelve
+          // distanciaKm=null en ambos casos), se descarta — mejor mostrar
+          // menos comparables que mostrar uno fuera de zona o lejano con
+          // apariencia de "cercano confirmado".
+          candidatosVerificados = candidatosAbiertos.filter(l => {
+            const dk = distanciaPorDireccion.get(normalizarTexto((l.split(" | ")[0] || "").trim()));
+            return dk != null && dk <= RADIO_MAX_KM;
+          });
         } catch(e) { console.warn("Geocode batch falló:", e.message); }
       }
       candidatosVerificados.forEach(extraerPrecioM2);
@@ -1668,7 +1671,7 @@ export default function TasaLibre() {
 
         if (coordsPropiedad && parsed.comparables.length > 0) {
           try {
-            const RADIO_MAX_KM_COMPS = 1.5;
+            const RADIO_MAX_KM_COMPS = 0.8;
             const direccionesComps = parsed.comparables.map(c => c.direccion).filter(Boolean);
             const geoRes2 = await fetch("/api/tasar", {
               method: "POST",
@@ -1687,14 +1690,14 @@ export default function TasaLibre() {
             const distanciaPorDireccion = new Map(
               (geoData2.resultados || []).map(r => [normalizarTexto(r.direccion), r.distanciaKm])
             );
-            const conDistanciaValida = parsed.comparables.filter(c => {
+            // Mismo criterio ESTRICTO que en BLOQUE 12: solo se conserva un
+            // comparable si el geocode confirmó distancia real y precisa
+            // dentro de radio. Sin confirmación (geocode falló o fue
+            // impreciso) => se descarta, no se asume cercanía.
+            parsed.comparables = parsed.comparables.filter(c => {
               const dk = distanciaPorDireccion.get(normalizarTexto(c.direccion));
               return dk != null && dk <= RADIO_MAX_KM_COMPS;
             });
-            // Igual que arriba: si NINGUNO tiene distancia válida (geocode
-            // no encontró nada), se mantiene el filtro de texto en vez de
-            // vaciar la lista entera.
-            if (conDistanciaValida.length > 0) parsed.comparables = conDistanciaValida;
           } catch(e) { console.warn("Geocode batch de comparables falló:", e.message); }
         }
       }
