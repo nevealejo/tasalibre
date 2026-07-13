@@ -172,6 +172,33 @@ async function getNearbyStreets(lat, lon, radius) {
   } catch { return []; }
 }
 
+// BLOQUE 18c: helper de POST que sigue redirects preservando método y body.
+// El log de Vercel del 13/07 18:55 mostró "Tokko: respuesta no-JSON (status
+// 405): GET" — es decir, nuestro POST llegó como GET al destino final. Esto
+// pasa porque fetch() (spec WHATWG, la sigue tal cual Node/undici) convierte
+// AUTOMÁTICAMENTE POST a GET al seguir un redirect 301/302/303, descartando
+// el body. Si tokkobroker.com redirige la URL de búsqueda (ej. por http/https,
+// con/sin barra final, etc.), nuestro POST se convertía en un GET vacío que
+// el endpoint final rechaza con 405. Con redirect:"manual" interceptamos el
+// redirect nosotros mismos y reintentamos el POST real (con su body) contra
+// la URL final, en vez de dejar que el navegador/runtime lo degrade a GET.
+async function postJsonSiguiendoRedirects(url, body, headers, signal, maxSaltos = 3) {
+  let currentUrl = url;
+  let ultimaRes = null;
+  for (let i = 0; i <= maxSaltos; i++) {
+    const res = await fetch(currentUrl, { method: "POST", redirect: "manual", signal, headers, body: JSON.stringify(body) });
+    ultimaRes = res;
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get("location");
+      if (!location) break;
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+    return res;
+  }
+  return ultimaRes;
+}
+
 // BLOQUE 16: root-cause fix del problema "0 comparables" — antes esta función
 // pedía a TODA la red Tokko ("network", id 0) los primeros 40 objetos (orden
 // no geográfico) y recién ahí filtraba por si el nombre del barrio aparecía
@@ -228,12 +255,12 @@ async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCoch
 
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(url, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: searchData })
-    });
+    const res = await postJsonSiguiendoRedirects(
+      url,
+      { data: searchData },
+      { "Content-Type": "application/json" },
+      ctrl.signal
+    );
 
     // Parseo defensivo: si Tokko devuelve algo que no es JSON (error de su
     // WAF, timeout parcial, HTML de error, etc.) no queremos que reviente
