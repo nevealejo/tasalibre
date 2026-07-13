@@ -1,5 +1,3 @@
-import { randomUUID } from "crypto";
-
 const SUPABASE_URL = "https://qhojftormgvcdncaaftx.supabase.co";
 
 // ── Notificación WhatsApp al admin vía CallMeBot ──────────────────────────
@@ -30,6 +28,26 @@ async function notifyWhatsApp(msg) {
     console.warn("WhatsApp notify failed:", e.message);
   }
   return diag;
+}
+
+// BLOQUE 18b: el log de Vercel del 13/07 18:56 mostró que mi intento anterior
+// (mandar id: randomUUID()) rompió con error 22P02 "invalid input syntax" —
+// eso confirma que la columna "id" de leads NO es de tipo uuid, sino
+// numérica (integer/bigint) sin default/secuencia configurada en Supabase.
+// Mientras el usuario no corra el ALTER TABLE permanente (ver instrucciones
+// que le paso aparte), este helper calcula el próximo id disponible
+// consultando el máximo actual + 1, para no seguir perdiendo leads. Hay un
+// riesgo remoto de colisión si dos leads entran en el mismo instante exacto,
+// aceptable para el volumen de este formulario.
+async function nextLeadId(headers) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/leads?select=id&order=id.desc.nullslast&limit=1`, { headers });
+    const rows = await r.json();
+    const maxId = Number(rows?.[0]?.id);
+    return Number.isFinite(maxId) ? maxId + 1 : 1;
+  } catch (e) {
+    return null;
+  }
 }
 
 export default async function handler(req, res) {
@@ -76,16 +94,17 @@ export default async function handler(req, res) {
       return Number.isFinite(n) ? n : null;
     };
 
-    // BLOQUE 18: causa raíz REAL del bug de leads perdidos, confirmada en
-    // Vercel Logs del 13/07: "null value in column \"id\" of relation
-    // \"leads\" violates not-null constraint" — la columna id de la tabla no
-    // tiene un DEFAULT (gen_random_uuid()) configurado en Supabase, así que
-    // CUALQUIER insert que no mande id explícito fallaba siempre. El
-    // auto-reintento del BLOQUE 15 no alcanzaba a arreglarlo porque reintentaba
-    // con id="" (string vacío), que tampoco es un uuid válido. Se genera el
-    // id acá mismo, sin depender de que Supabase lo autogenere.
+    // BLOQUE 18: causa raíz del bug de leads perdidos, confirmada en Vercel
+    // Logs del 13/07: "null value in column \"id\" of relation \"leads\"
+    // violates not-null constraint" — la columna id no tiene DEFAULT
+    // configurado en Supabase, así que cualquier insert sin id explícito
+    // fallaba siempre. El fix PERMANENTE es correr en Supabase (SQL Editor):
+    //   CREATE SEQUENCE IF NOT EXISTS leads_id_seq OWNED BY leads.id;
+    //   SELECT setval('leads_id_seq', COALESCE((SELECT MAX(id) FROM leads),0)+1, false);
+    //   ALTER TABLE leads ALTER COLUMN id SET DEFAULT nextval('leads_id_seq');
+    // Mientras tanto, el reintento de abajo calcula el próximo id (BLOQUE 18b)
+    // para no perder leads en el ínterin.
     const payload = {
-      id: randomUUID(),
       nombre: (nombre || "Sin nombre").slice(0, 120),
       whatsapp: (whatsapp || "").slice(0, 30),
       tipo: tipo || "",
@@ -128,8 +147,12 @@ export default async function handler(req, res) {
       const colMatch = full.match(/column "([^"]+)"/i);
       if (colMatch && !(colMatch[1] in payload)) {
         const col = colMatch[1];
-        console.warn(`Reintentando insert de lead: columna "${col}" faltante, probando con "" (string vacío)`);
-        const r2 = await doInsert({ ...payload, [col]: "" });
+        // BLOQUE 18b: para "id" específicamente, "" no sirve (la columna es
+        // numérica, no uuid ni texto — confirmado por el error 22P02 que dio
+        // el intento anterior con un uuid). Calculamos el próximo id real.
+        const valorReintento = col === "id" ? await nextLeadId(headers) : "";
+        console.warn(`Reintentando insert de lead: columna "${col}" faltante, probando con ${JSON.stringify(valorReintento)}`);
+        const r2 = await doInsert({ ...payload, [col]: valorReintento });
         if (r2.ok) {
           r = r2;
           supabaseError = "";
