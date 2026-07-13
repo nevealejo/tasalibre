@@ -2,10 +2,11 @@ export const config = { maxDuration: 300 };
 
 const SUPABASE_URL = "https://qhojftormgvcdncaaftx.supabase.co";
 
-// ── Rate limiting: máx 20 llamadas/día por IP (≈4 tasaciones) ─────────────
-// BLOQUE 12: subido de 16 a 20 porque cada tasación ahora hace 1 llamada
-// mas (_geocodeBatch) que antes no existía: 1 enrichOnly + 1 geocodeBatch +
-// 3 búsquedas + 1 tasación final = 5 llamadas por tasación (antes 4).
+// ── Rate limiting: máx 36 llamadas/día por IP (≈4 tasaciones) ─────────────
+// BLOQUE 14: subido de 20 a 36 — cada tasación en mercado abierto ahora hace
+// 1 enrichOnly + hasta 2 geocodeBatch (candidatos + comparables de la IA) +
+// 5 búsquedas (antes 3, con más variedad de portales/inmobiliarias) + 1
+// tasación final = hasta 9 llamadas por tasación (antes 5).
 async function checkRateLimit(ip) {
   try {
     const key = process.env.SUPABASE_SECRET_KEY;
@@ -26,7 +27,7 @@ async function checkRateLimit(ip) {
     }
 
     const count = rows[0].count || 0;
-    if (count >= 20) return false; // 4 tasaciones × 5 llamadas
+    if (count >= 36) return false; // 4 tasaciones × hasta 9 llamadas
 
     await fetch(`${SUPABASE_URL}/rest/v1/rate_limits?ip=eq.${encodeURIComponent(ip)}&fecha=eq.${hoy}`, {
       method: "PATCH",
