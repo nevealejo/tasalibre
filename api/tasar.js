@@ -95,6 +95,14 @@ async function geocodeAddressGoogle(address) {
       lat: r.geometry.location.lat,
       lon: r.geometry.location.lng,
       barrioDetectado: barrioComp ? barrioComp.long_name : null,
+      // ROOFTOP/RANGE_INTERPOLATED = ubicó la altura/numeración real.
+      // GEOMETRIC_CENTER/APPROXIMATE = solo ubicó la calle o la zona en
+      // general (puede estar a varias cuadras del número real). Para
+      // comparar distancias a radio chico esto importa: un "lejos" que
+      // pasó el filtro puede deberse a que su geocode fue aproximado, no
+      // preciso, y la distancia calculada sale artificialmente baja.
+      locationType: r.geometry.location_type || null,
+      preciso: r.geometry.location_type === "ROOFTOP" || r.geometry.location_type === "RANGE_INTERPOLATED",
     };
   } catch (e) {
     console.error(`Google geocode exception para "${address}": ${e.message}`);
@@ -104,11 +112,13 @@ async function geocodeAddressGoogle(address) {
 
 // Google primero (mas confiable); si no hay key configurada o falla, cae a
 // Nominatim como respaldo — mejor tener algo de geo-contexto que nada.
+// Nominatim no informa precisión por altura, así que se marca preciso=false
+// para esas resoluciones (mejor tratarlas como aproximadas por defecto).
 async function geocodeAddressConFallback(address) {
   const g = await geocodeAddressGoogle(address);
   if (g) return g;
   const n = await geocodeAddress(address);
-  return n ? { lat: n.lat, lon: n.lon, barrioDetectado: null } : null;
+  return n ? { lat: n.lat, lon: n.lon, barrioDetectado: null, locationType: "NOMINATIM", preciso: false } : null;
 }
 
 // Distancia real entre dos coordenadas (fórmula de Haversine, en km) — esto
@@ -320,7 +330,7 @@ export default async function handler(req, res) {
 
     // BLOQUE 11: log server-side para poder ver en Vercel -> Logs si el
     // geocode esta funcionando o no en producción, sin depender de devtools.
-    console.log(`[_enrichOnly] address="${address}" geocodeOk=${!!coords} streetsNearby=${streetsNearby.length} barrioDetectado=${coords?.barrioDetectado || "-"}`);
+    console.log(`[_enrichOnly] address="${address}" geocodeOk=${!!coords} preciso=${coords?.preciso ?? "-"} locationType=${coords?.locationType || "-"} streetsNearby=${streetsNearby.length} barrioDetectado=${coords?.barrioDetectado || "-"}`);
 
     // streetsNearby viaja crudo (array) ademas del texto ya formateado, para que
     // el cliente pueda usar los nombres reales de calles geolocalizadas al armar
@@ -331,7 +341,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       streetContext, streetsNearby, tokkoContext, tokkoComps, coords: coords || null,
       barrioDetectado: coords?.barrioDetectado || null,
-      _debug: { geocodeOk: !!coords, streetsFound: streetsNearby.length },
+      _debug: { geocodeOk: !!coords, preciso: coords?.preciso ?? null, locationType: coords?.locationType || null, streetsFound: streetsNearby.length },
     });
   }
 
@@ -345,11 +355,24 @@ export default async function handler(req, res) {
     const lista = (Array.isArray(direcciones) ? direcciones : []).slice(0, 15); // tope defensivo de costo
     const resultados = await Promise.all(lista.map(async (direccion) => {
       const consulta = contexto ? `${direccion}, ${contexto}` : direccion;
-      const g = await geocodeAddressGoogle(consulta);
-      if (!g || origenLat == null || origenLon == null) return { direccion, distanciaKm: null };
+      // Google primero, Nominatim como respaldo si Google falla puntualmente
+      // para ESTA dirección (rate limit, ambigüedad, timeout) — antes esto
+      // llamaba solo a Google, así que cualquier falla individual dejaba
+      // distanciaKm=null y el filtro del cliente terminaba descartando
+      // comparables reales que sí estaban en zona.
+      const g = await geocodeAddressConFallback(consulta);
+      if (!g || origenLat == null || origenLon == null) return { direccion, distanciaKm: null, motivo: "sin_geocode" };
+      // Si el geocode no resolvió a nivel de altura/numeración (preciso ===
+      // false — vino de Nominatim o Google devolvió GEOMETRIC_CENTER/
+      // APPROXIMATE), la distancia calculada puede estar centrada en la
+      // calle o la zona en general y no en el número real. Con un radio
+      // chico (uso urbano) eso puede dar falsos "cerca" para direcciones
+      // que en realidad están a varias cuadras. Se devuelve sin distancia
+      // confiable en vez de arriesgar un falso positivo de proximidad.
+      if (!g.preciso) return { direccion, distanciaKm: null, motivo: "geocode_impreciso:" + (g.locationType || "?") };
       return { direccion, distanciaKm: Math.round(distanciaKm(origenLat, origenLon, g.lat, g.lon) * 100) / 100 };
     }));
-    console.log(`[_geocodeBatch] ${lista.length} direcciones, ${resultados.filter(r=>r.distanciaKm!=null).length} geocodificadas OK`);
+    console.log(`[_geocodeBatch] ${lista.length} direcciones, ${resultados.filter(r=>r.distanciaKm!=null).length} geocodificadas OK y precisas`);
     return res.status(200).json({ resultados });
   }
 
