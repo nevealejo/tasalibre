@@ -1345,14 +1345,17 @@ export default function TasaLibre() {
           body: JSON.stringify({
             model: "claude-sonnet-4-6",
             max_tokens: esCerradoSearch ? 700 : 400,
-            // BLOQUE 10: max_uses acota cuántas búsquedas puede hacer el modelo
-            // DENTRO de este mismo turno. Sin este límite, el modelo puede
-            // reintentar indefinidamente si no encuentra resultados que
-            // satisfagan las reglas (ej: "descartar sin precio", "critico
-            // zona") — eso es lo que disparó 31 búsquedas y ~1.1M tokens de
-            // entrada en una sola tasación. 4 alcanza para encontrar
-            // comparables reales sin dejar la búsqueda sin techo.
-            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
+            // BLOQUE 10/14: max_uses acota cuántas búsquedas puede hacer el
+            // modelo DENTRO de este mismo turno. Sin límite, reintentaba
+            // indefinidamente (31 búsquedas, ~1.1M tokens, ~USD 4 en una sola
+            // tasación). Con 4 por llamada x 3 llamadas en paralelo, el techo
+            // teórico son 12 búsquedas por tasación — en el peor caso (cada
+            // búsqueda acumulando tanto contexto como en el incidente de
+            // USD 4) eso todavía puede acercarse a USD 1. Bajado a 2 por
+            // llamada (6 en total) para dejar más margen bajo el límite duro
+            // de USD 1/tasación. Verificar costo real en Anthropic Console
+            // después del proximo deploy y ajustar si hace falta.
+            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
             messages: [{ role: "user", content: searchPrompt }],
           })
         })
@@ -1380,10 +1383,18 @@ export default function TasaLibre() {
       // cuenta. Antes, esto solo detectaba USD y descartaba silenciosamente
       // cualquier comparable en pesos (perdiendo datos reales de alquileres).
       const extraerPrecioM2 = (linea) => {
-        const mUsd = linea.match(/USD\s*\$?\s*([\d][\d.,]{2,})/i) || linea.match(/US\$\s*([\d][\d.,]{2,})/i);
+        // BLOQUE 13: "U$S" (dólar en el medio) es el formato MAS COMUN en
+        // avisos argentinos — la regex original solo reconocia "USD" y
+        // "US$", nunca "U$S", asi que perdia silenciosamente la mayoria de
+        // los precios reales. Se agrega como variante adicional.
+        const mUsd = linea.match(/USD\s*\$?\s*([\d][\d.,]{2,})/i)
+          || linea.match(/US\$\s*([\d][\d.,]{2,})/i)
+          || linea.match(/U\$S\s*([\d][\d.,]{2,})/i);
         const mArs = !mUsd && linea.match(/(?:ARS|AR\$)\s*([\d][\d.,]{2,})/i);
         const mPesoSuelto = !mUsd && !mArs && linea.match(/\$\s*([\d]{1,3}(?:[.,]\d{3}){2,})/); // $ seguido de un número grande (miles de pesos)
-        const mM2 = linea.match(/(\d+(?:[.,]\d+)?)\s*m2/i);
+        // BLOQUE 13: "m²" (caracter unicode de metro cuadrado) es tan comun
+        // como "m2" en avisos reales — antes solo se reconocia "m2" literal.
+        const mM2 = linea.match(/(\d+(?:[.,]\d+)?)\s*m[2²]/i);
         if ((!mUsd && !mArs && !mPesoSuelto) || !mM2) return;
 
         const moneda = mUsd ? "usd" : "ars";
