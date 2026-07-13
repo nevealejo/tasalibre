@@ -495,6 +495,32 @@ function normalizarTexto(s) {
     .trim();
 }
 
+// BLOQUE 13: extrae "calle + numero" de un fragmento de texto libre (un
+// resultado de busqueda web, no un dato estructurado). Antes se mandaba el
+// PARRAFO ENTERO a geocodificar (split(" | ")[0] sobre texto que nunca tuvo
+// ese separador) — Google no puede resolver un parrafo completo con
+// precision de altura, asi que todo terminaba impreciso o sin resultado, y
+// con el filtro estricto de distancia esto colapsaba los comparables a
+// cero. Se prueban patrones de mas a menos especificos y se devuelve el
+// primero que matchee; si ninguno matchea, se devuelve null (no se manda a
+// geocodificar un texto que no tiene pinta de direccion real).
+function extraerDireccion(linea) {
+  if (!linea) return null;
+  const patrones = [
+    // Calles que empiezan con numero: "9 de Julio 63", "25 de Mayo 800", "3 de Febrero 120"
+    /(\d{1,2}\s+de\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+\d{2,5})\b/,
+    // Avenida/Av. + nombre (1-3 palabras) + numero
+    /((?:Av(?:enida)?\.?\s+)[A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ.]*(?:\s[A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ]*){0,2}\s+\d{2,5})\b/,
+    // Nombre propio (1-3 palabras, con conectores de/del/la/las/los permitidos) + numero
+    /([A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ]*(?:\s(?:de|del|la|las|los)?\s?[A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ]*){0,2}\s+\d{2,5})\b/,
+  ];
+  for (const re of patrones) {
+    const m = linea.match(re);
+    if (m) return m[1].replace(/\s+/g, " ").trim();
+  }
+  return null;
+}
+
 // ── BLOQUE 2: motor determinístico de ajustes estructurales ────────────────
 // disposición, ascensor, balcón, hall, estado y acceso de PH ya son datos
 // conocidos del formulario (los eligió el usuario en el wizard) — no hace
@@ -1463,11 +1489,15 @@ export default function TasaLibre() {
       // tal cual lo que ya pasó el filtro de texto (mismo respaldo de antes).
       const RADIO_MAX_KM = 0.8;
       let candidatosVerificados = candidatosAbiertos;
+      // Mapa línea-cruda -> dirección extraída (calle+número real, no el
+      // párrafo entero). Se arma una vez y se reusa para mandar a
+      // geocodificar y para volver a matchear el resultado — así la
+      // extracción y el filtro usan siempre la misma clave.
+      const direccionPorLinea = new Map(candidatosAbiertos.map(l => [l, extraerDireccion(l)]));
+      console.log(`[BLOQUE12] candidatosAbiertos=${candidatosAbiertos.length}, con direccion extraible=${[...direccionPorLinea.values()].filter(Boolean).length}`);
       if (!esCerradoSearch && coordsPropiedad && candidatosAbiertos.length > 0) {
         try {
-          const direccionesCandidatas = candidatosAbiertos
-            .map(l => (l.split(" | ")[0] || "").trim())
-            .filter(Boolean);
+          const direccionesCandidatas = [...new Set([...direccionPorLinea.values()].filter(Boolean))];
           const geoRes = await fetch("/api/tasar", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1482,22 +1512,27 @@ export default function TasaLibre() {
             }),
           });
           const geoData = await geoRes.json();
+          console.log("[BLOQUE12] geocodeBatch resultados:", JSON.stringify(geoData.resultados || []));
           const distanciaPorDireccion = new Map(
             (geoData.resultados || []).map(r => [normalizarTexto(r.direccion), r.distanciaKm])
           );
           // Por-item, y ESTRICTO: solo se mantiene un candidato si el geocode
           // confirmó una distancia real y precisa (altura/numeración, no
           // sólo la calle o la zona) dentro de RADIO_MAX_KM. Si no se pudo
-          // geocodificar, o el geocode fue impreciso (server devuelve
-          // distanciaKm=null en ambos casos), se descarta — mejor mostrar
-          // menos comparables que mostrar uno fuera de zona o lejano con
-          // apariencia de "cercano confirmado".
+          // extraer una dirección de la línea, o no se pudo geocodificar, o
+          // el geocode fue impreciso (server devuelve distanciaKm=null en
+          // ambos casos), se descarta — mejor mostrar menos comparables que
+          // mostrar uno fuera de zona o lejano con apariencia de "cercano
+          // confirmado".
           candidatosVerificados = candidatosAbiertos.filter(l => {
-            const dk = distanciaPorDireccion.get(normalizarTexto((l.split(" | ")[0] || "").trim()));
+            const dir = direccionPorLinea.get(l);
+            if (!dir) return false;
+            const dk = distanciaPorDireccion.get(normalizarTexto(dir));
             return dk != null && dk <= RADIO_MAX_KM;
           });
         } catch(e) { console.warn("Geocode batch falló:", e.message); }
       }
+      console.log(`[BLOQUE12] candidatosVerificados finales=${candidatosVerificados.length}`);
       candidatosVerificados.forEach(extraerPrecioM2);
       if (candidatosVerificados.length > 0) {
         comparablesData += " | " + candidatosVerificados.join(" | ").slice(0, 1200);
@@ -1537,6 +1572,14 @@ export default function TasaLibre() {
 
       const sinComparablesBarrioCerrado = esCerradoSearch && nombreBarrioFiltro && !comparablesData.trim();
       const nombreBarrioCompletoWarn = nombreBarrioFiltro + (sectorFiltro ? " (sector " + sectorFiltro + ")" : "");
+      // Mismo caso pero en zona abierta: si después de todos los filtros de
+      // geolocalización (BLOQUE 12) no quedó NINGÚN comparable confirmado
+      // (preciosM2Calculados vacío más abajo), el precio final termina
+      // siendo lo que la IA puso por su cuenta, sin ancla ni clamp que lo
+      // verifique — hay que marcarlo como fallback también, para que la
+      // confianza caiga a "baja" y se le avise al usuario en vez de mostrar
+      // un precio con apariencia de estar respaldado quando no lo está.
+      const sinComparablesVerificados = !esCerradoSearch && preciosM2Calculados.length === 0;
 
       // Ancla numérica verificada por código: mediana de precio/m2 calculado por
       // NOSOTROS (no por la IA). BLOQUE 3: ya no se limita a barrio cerrado —
@@ -1658,18 +1701,30 @@ export default function TasaLibre() {
       // lo que realmente garantiza un radio de verdad. (No aplica a barrio
       // cerrado: ahí el filtro por título ya es más estricto que esto).
       if (!esCerradoSearch && Array.isArray(parsed.comparables)) {
-        const geoFiltro = (streetsNearby || []).map(normalizarTexto).filter(Boolean);
-        const calleFiltro = normalizarTexto(calle);
-        const barrioFiltro = normalizarTexto(barrio);
-        parsed.comparables = parsed.comparables.filter(c => {
-          const d = normalizarTexto(c.direccion);
-          if (calleFiltro && d.includes(calleFiltro)) return true;
-          if (geoFiltro.some(cl => d.includes(cl))) return true;
-          if (geoFiltro.length === 0 && barrioFiltro && d.includes(barrioFiltro)) return true;
-          return false;
-        });
-
-        if (coordsPropiedad && parsed.comparables.length > 0) {
+        console.log(`[COMPS] parsed.comparables recibidos de la IA=${parsed.comparables.length}`, JSON.stringify(parsed.comparables.map(c=>c.direccion)));
+        if (!coordsPropiedad) {
+          // Sin coordenadas de la propiedad no hay forma de verificar
+          // distancia real — se usa el filtro de texto (calles geolocalizadas
+          // cercanas, o barrio como último respaldo) porque es lo único
+          // disponible en ese caso.
+          const geoFiltro = (streetsNearby || []).map(normalizarTexto).filter(Boolean);
+          const calleFiltro = normalizarTexto(calle);
+          const barrioFiltro = normalizarTexto(barrio);
+          parsed.comparables = parsed.comparables.filter(c => {
+            const d = normalizarTexto(c.direccion);
+            if (calleFiltro && d.includes(calleFiltro)) return true;
+            if (geoFiltro.some(cl => d.includes(cl))) return true;
+            if (geoFiltro.length === 0 && barrioFiltro && d.includes(barrioFiltro)) return true;
+            return false;
+          });
+        } else if (parsed.comparables.length > 0) {
+          // Con coordenadas reales de la propiedad, el filtro de texto de
+          // arriba queda redundante y además era contraproducente: cuando
+          // streetsNearby venía vacío (Overpass sin resultados), comparaba la
+          // DIRECCIÓN ("Castelli 132") contra el NOMBRE DEL BARRIO ("quilmes
+          // centro") — que nunca matchea — y vaciaba toda la lista antes de
+          // llegar acá. Con coordenadas disponibles, se confía directo en la
+          // distancia real geocodificada (más confiable que cualquier texto).
           try {
             const RADIO_MAX_KM_COMPS = 0.8;
             const direccionesComps = parsed.comparables.map(c => c.direccion).filter(Boolean);
@@ -1687,19 +1742,21 @@ export default function TasaLibre() {
               }),
             });
             const geoData2 = await geoRes2.json();
+            console.log("[COMPS] geocodeBatch resultados:", JSON.stringify(geoData2.resultados || []));
             const distanciaPorDireccion = new Map(
               (geoData2.resultados || []).map(r => [normalizarTexto(r.direccion), r.distanciaKm])
             );
-            // Mismo criterio ESTRICTO que en BLOQUE 12: solo se conserva un
-            // comparable si el geocode confirmó distancia real y precisa
-            // dentro de radio. Sin confirmación (geocode falló o fue
-            // impreciso) => se descarta, no se asume cercanía.
+            // Por-item, ESTRICTO: solo se conserva un comparable si el
+            // geocode confirmó distancia real y precisa dentro de radio.
+            // Sin confirmación (geocode falló o fue impreciso) => se
+            // descarta, no se asume cercanía.
             parsed.comparables = parsed.comparables.filter(c => {
               const dk = distanciaPorDireccion.get(normalizarTexto(c.direccion));
               return dk != null && dk <= RADIO_MAX_KM_COMPS;
             });
           } catch(e) { console.warn("Geocode batch de comparables falló:", e.message); }
         }
+        console.log(`[COMPS] parsed.comparables finales=${parsed.comparables.length}`);
       }
 
       // ── BLOQUE 2: motor determinístico de ajustes estructurales ──────────
@@ -1754,7 +1811,7 @@ export default function TasaLibre() {
         seAlejoDelAncla: anclaClamp.corregido,
         camposFaltantes,
         busquedasFallidas: searchErrors.length,
-        esFallbackSinComparables: sinComparablesBarrioCerrado,
+        esFallbackSinComparables: sinComparablesBarrioCerrado || sinComparablesVerificados,
       });
 
       // ── Ajuste de pileta (casas, venta) ─────────────────────────────────
