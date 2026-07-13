@@ -74,33 +74,61 @@ export default async function handler(req, res) {
       return Number.isFinite(n) ? n : null;
     };
 
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
+    const payload = {
+      nombre: (nombre || "Sin nombre").slice(0, 120),
+      whatsapp: (whatsapp || "").slice(0, 30),
+      tipo: tipo || "",
+      operacion: operacion || "",
+      direccion: (address || "").slice(0, 300),
+      superficie: toInt(supTotal),
+      ambientes: toInt(ambientes),
+      dormitorios: toInt(dormitorios),
+      valor_usd: toNum(valorUsd),
+      precio_m2: toNum(precioM2),
+      html_informe: htmlInforme || null,
+      resultado_json: resultadoJson || null,
+      status: "pendiente",
+      created_at: new Date().toISOString()
+    };
+    const doInsert = (body) => fetch(`${SUPABASE_URL}/rest/v1/leads`, {
       method: "POST",
       headers: { ...headers, "Prefer": "return=minimal" },
-      body: JSON.stringify({
-        nombre: (nombre || "Sin nombre").slice(0, 120),
-        whatsapp: (whatsapp || "").slice(0, 30),
-        tipo: tipo || "",
-        operacion: operacion || "",
-        direccion: (address || "").slice(0, 300),
-        superficie: toInt(supTotal),
-        ambientes: toInt(ambientes),
-        dormitorios: toInt(dormitorios),
-        valor_usd: toNum(valorUsd),
-        precio_m2: toNum(precioM2),
-        html_informe: htmlInforme || null,
-        resultado_json: resultadoJson || null,
-        status: "pendiente",
-        created_at: new Date().toISOString()
-      })
+      body: JSON.stringify(body)
     });
+
+    let r = await doInsert(payload);
 
     // Notificación WhatsApp al admin — SIEMPRE se intenta, incluso si falló el guardado,
     // para que ninguna tasación pase desapercibida.
     let supabaseError = "";
     if (!r.ok) {
-      try { supabaseError = (await r.text()).slice(0, 200); } catch(e) {}
-      console.error("Supabase insert failed:", r.status, supabaseError);
+      let full = "";
+      try { full = await r.text(); } catch(e) {}
+      console.error("Supabase insert failed:", r.status, full);
+      supabaseError = full.slice(0, 200);
+
+      // BLOQUE 15: auto-reintento — si el error es "columna NOT NULL sin
+      // valor" (23502), Postgrest siempre nombra la columna exacta en el
+      // mensaje ("null value in column \"X\" violates..."). En vez de perder
+      // el lead entero por una columna que no conocíamos, la detectamos y
+      // reintentamos UNA vez con un valor por defecto seguro (string vacío).
+      // Esto además deja logueado el nombre real de la columna para poder
+      // corregir el insert de forma permanente en el próximo ajuste.
+      const colMatch = full.match(/column "([^"]+)"/i);
+      if (colMatch && !(colMatch[1] in payload)) {
+        const col = colMatch[1];
+        console.warn(`Reintentando insert de lead: columna "${col}" faltante, probando con "" (string vacío)`);
+        const r2 = await doInsert({ ...payload, [col]: "" });
+        if (r2.ok) {
+          r = r2;
+          supabaseError = "";
+          console.log(`Insert de lead OK en el reintento agregando "${col}" = ""`);
+        } else {
+          const full2 = await r2.text().catch(() => "");
+          console.error("Reintento de insert también falló:", r2.status, full2);
+          supabaseError = full2.slice(0, 200) || supabaseError;
+        }
+      }
     }
     const msg = (r.ok ? "🏠 Nuevo lead TasaLibre!" : "⚠️ Tasación realizada pero el lead NO se guardó (error " + r.status + (supabaseError ? ": " + supabaseError.slice(0, 120) : "") + ")") +
       `\n${nombre || "Sin nombre"} - ${whatsapp || "sin tel"}\n${tipo} en ${operacion} - ${address || ""}` +
