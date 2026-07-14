@@ -1886,26 +1886,41 @@ export default function TasaLibre() {
           // ambos casos), se descarta — mejor mostrar menos comparables que
           // mostrar uno fuera de zona o lejano con apariencia de "cercano
           // confirmado".
-          candidatosVerificados = candidatosAbiertos.filter(l => {
+          const candidatosEstrictos = candidatosAbiertos.filter(l => {
             const dir = direccionPorLinea.get(l);
             if (!dir) return false;
             const dk = distanciaPorDireccion.get(normalizarTexto(dir));
             return dk != null && dk <= RADIO_MAX_KM;
           });
-          // BLOQUE 16: si el radio estricto dejó 0 candidatos pero SÍ hubo
-          // direcciones geocodificadas con precisión (solo estaban más lejos
-          // de 800m), reintentar con el radio amplio antes de resignarse.
-          if (candidatosVerificados.length === 0) {
+          // BLOQUE 27: mínimo de comparables. Antes, si el radio estricto
+          // (0.8km) ya encontraba AL MENOS 1 candidato, nunca se miraba la
+          // banda 0.8-2.5km en busca de MÁS — aunque el total estricto fuera
+          // 1 o 2 (pedido explícito del usuario: "necesitamos minimo 4").
+          // Ahora: si el estricto no llega al mínimo, se arma el pool
+          // completo (hasta 2.5km) y se ordena por distancia ascendente,
+          // para sumar los más cercanos de la banda amplia sin perder la
+          // prioridad de cercanía (los del radio estricto, al ser más
+          // cercanos, quedan primeros de todos modos).
+          const MIN_COMPARABLES = 4;
+          if (candidatosEstrictos.length >= MIN_COMPARABLES) {
+            candidatosVerificados = candidatosEstrictos;
+          } else {
             const candidatosRadioAmplio = candidatosAbiertos.filter(l => {
               const dir = direccionPorLinea.get(l);
               if (!dir) return false;
               const dk = distanciaPorDireccion.get(normalizarTexto(dir));
               return dk != null && dk <= RADIO_MAX_KM_AMPLIO;
+            }).sort((a, b) => {
+              const da = distanciaPorDireccion.get(normalizarTexto(direccionPorLinea.get(a)));
+              const db = distanciaPorDireccion.get(normalizarTexto(direccionPorLinea.get(b)));
+              return (da ?? 99) - (db ?? 99);
             });
-            if (candidatosRadioAmplio.length > 0) {
+            if (candidatosRadioAmplio.length > candidatosEstrictos.length) {
               candidatosVerificados = candidatosRadioAmplio;
-              radioAmpliadoUsado = true;
-              console.log(`[BLOQUE12] radio estricto (0.8km) dio 0 — usando radio amplio (${RADIO_MAX_KM_AMPLIO}km): ${candidatosRadioAmplio.length} candidatos`);
+              radioAmpliadoUsado = candidatosRadioAmplio.length > candidatosEstrictos.length;
+              console.log(`[BLOQUE12] radio estricto (0.8km) dio ${candidatosEstrictos.length} (<${MIN_COMPARABLES}) — usando pool amplio (${RADIO_MAX_KM_AMPLIO}km) ordenado por distancia: ${candidatosRadioAmplio.length} candidatos`);
+            } else {
+              candidatosVerificados = candidatosEstrictos;
             }
           }
           // BLOQUE 23: mientras direccionPorLinea/distanciaPorDireccion siguen
@@ -2251,20 +2266,28 @@ export default function TasaLibre() {
               const dk = distanciaPorDireccion.get(normalizarTexto(c.direccion));
               return dk != null && dk <= RADIO_MAX_KM_COMPS;
             });
-            // BLOQUE 16: mismo respaldo de radio amplio que en BLOQUE12 — si
-            // el radio estricto deja 0, probar con 2.5km antes de resignarse.
-            if (comparablesEstrictos.length === 0) {
+            // BLOQUE 27: mismo mínimo de comparables que en BLOQUE12 — antes,
+            // si el radio estricto ya dejaba 1+, nunca se miraba la banda
+            // 0.8-2.5km en busca de MÁS (pedido explícito: "necesitamos
+            // minimo 4"). Ahora, si no se llega al mínimo, se usa el pool
+            // amplio completo ordenado por distancia ascendente.
+            const MIN_COMPARABLES_COMPS = 4;
+            if (comparablesEstrictos.length >= MIN_COMPARABLES_COMPS) {
+              parsed.comparables = comparablesEstrictos;
+            } else {
               const comparablesAmplios = parsed.comparables.filter(c => {
                 const dk = distanciaPorDireccion.get(normalizarTexto(c.direccion));
                 return dk != null && dk <= RADIO_MAX_KM_COMPS_AMPLIO;
+              }).sort((a, b) => {
+                const da = distanciaPorDireccion.get(normalizarTexto(a.direccion));
+                const db = distanciaPorDireccion.get(normalizarTexto(b.direccion));
+                return (da ?? 99) - (db ?? 99);
               });
-              if (comparablesAmplios.length > 0) {
+              if (comparablesAmplios.length > comparablesEstrictos.length) {
                 radioAmpliadoUsado = true;
-                console.log(`[COMPS] radio estricto (0.8km) dio 0 — usando radio amplio (${RADIO_MAX_KM_COMPS_AMPLIO}km): ${comparablesAmplios.length} comparables`);
+                console.log(`[COMPS] radio estricto (0.8km) dio ${comparablesEstrictos.length} (<${MIN_COMPARABLES_COMPS}) — usando pool amplio (${RADIO_MAX_KM_COMPS_AMPLIO}km) ordenado por distancia: ${comparablesAmplios.length} comparables`);
               }
-              parsed.comparables = comparablesAmplios;
-            } else {
-              parsed.comparables = comparablesEstrictos;
+              parsed.comparables = comparablesAmplios.length > comparablesEstrictos.length ? comparablesAmplios : comparablesEstrictos;
             }
           } catch(e) { console.warn("Geocode batch de comparables falló:", e.message); }
         }
