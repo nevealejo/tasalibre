@@ -550,6 +550,28 @@ export default async function handler(req, res) {
   // llama a este endpoint repetidas veces (uno por chunk), y quien realmente
   // le habla a Tokko es siempre Vercel. Protegido por SYNC_SECRET para que
   // no cualquiera pueda disparar cargas de trabajo ni escribir en la tabla.
+  // DIAG TEMPORAL 2: ver un objeto crudo real de Tokko para mapear bien
+  // operation_type_id/property_type_id (BLOQUE 29b). Borrar despues.
+  if (req.body?._diagTokkoSample) {
+    const tokkoKey = process.env.TOKKO_API_KEY;
+    const sd = {
+      current_localization_id: 26578,
+      current_localization_type: "division",
+      operation_types: [1],
+      property_types: [2],
+      price_from: 0,
+      price_to: 999999999,
+      currency: "USD",
+      filters: [],
+      with_tags: [], without_tags: [], with_custom_tags: [],
+    };
+    const params = new URLSearchParams({ format: "json", key: tokkoKey, lang: "es_ar", limit: "2", offset: "0", data: JSON.stringify(sd) });
+    const url = `https://www.tokkobroker.com/api/v1/property/search/?${params.toString()}`;
+    const r = await fetch(url, { method: "GET", redirect: "follow" });
+    const text = await r.text();
+    return res.status(200).json({ status: r.status, raw: text.slice(0, 4000) });
+  }
+
   if (req.body?._syncTokkoChunk) {
     const secretEsperado = process.env.SYNC_SECRET;
     const secretRecibido = req.headers["x-sync-secret"];
