@@ -1571,7 +1571,16 @@ export default function TasaLibre() {
         // BLOQUE 8: streetContext y tokkoContext ya se resolvieron UNA vez en
         // la llamada de enriquecimiento de arriba — antes tasar.js los volvía
         // a calcular por cada una de estas 3 búsquedas.
-        const searchPrompt = tokkoContext + streetContext + bcContext + loteCentricoContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + formatoEstricto + " Para el campo fuente usa siempre: Relevamiento de mercado.";
+        // BLOQUE 26b: confirmado en vivo que ZonaProp bloquea (403) cualquier
+        // fetch server-to-server nuestro, así que aunque la IA cite una
+        // publicación real de ZonaProp, después no podemos abrirla para
+        // verificar precio/m² reales — se pierde ese candidato. Le pedimos
+        // que priorice webs de inmobiliarias locales/agencias (sitios chicos,
+        // sin protección anti-bot, como los que ya confirmamos que sí se
+        // pueden leer) por sobre los portales grandes, para que las URLs que
+        // terminamos intentando abrir tengan más chance de funcionar.
+        const preferenciaSitiosChicos = " Al buscar, priorizá webs de inmobiliarias/agencias locales (sitios propios de la inmobiliaria, no portales agregadores) por sobre ZonaProp, Argenprop, Mitula o Properati — esos portales grandes muchas veces no se pueden verificar después. Si encontrás la misma propiedad publicada tanto en un portal grande como en la web propia de la inmobiliaria, preferí siempre citar la web propia de la inmobiliaria.";
+        const searchPrompt = tokkoContext + streetContext + bcContext + loteCentricoContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + preferenciaSitiosChicos + formatoEstricto + " Para el campo fuente usa siempre: Relevamiento de mercado.";
         return fetch("/api/tasar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1928,9 +1937,32 @@ export default function TasaLibre() {
       let comparablesPaginaReal = [];
       if (!esCerradoSearch && coordsPropiedad) {
         try {
+          // BLOQUE 26b: confirmado en vivo (14/07) que ZonaProp devuelve 403
+          // a CUALQUIER fetch server-to-server (bot detection), sin importar
+          // si la URL es una publicación individual o una página de listado
+          // — de 8 URLs candidatas en una corrida real, 6 eran ZonaProp y las
+          // 6 dieron fetch_status:403; la 7ma era un agregador (Mitula) que
+          // devolvió una página de listado genérico, no una publicación, y
+          // dio una dirección basura ("Mitula Casas") que el geocode
+          // correctamente rechazó. Filtramos estos dominios ANTES de elegir
+          // qué 8 URLs mandar a verificar, para no gastar los 8 slots en
+          // sitios que sabemos que van a fallar — así quedan más lugares
+          // libres para inmobiliarias chicas (tipo deruyckprop.com.ar) que sí
+          // se pueden leer y que además tienen HTML con estructura simple y
+          // parseable (confirmado manualmente esta sesión).
+          const DOMINIOS_BLOQUEADOS = [
+            "zonaprop.com.ar", "argenprop.com", "mitula.com.ar",
+            "inmuebles24.com", "properati.com.ar",
+          ];
+          const urlEsFetcheable = (url) => {
+            try {
+              const host = new URL(url).hostname.replace(/^www\./, "");
+              return !DOMINIOS_BLOQUEADOS.some(d => host === d || host.endsWith("." + d));
+            } catch { return false; }
+          };
           const urlsCandidatas = [...new Map(
             searchResults.flatMap(r => r.urls || []).map(u => [u.url, u])
-          ).values()].slice(0, 8); // tope defensivo de costo/latencia
+          ).values()].filter(u => urlEsFetcheable(u.url)).slice(0, 8); // tope defensivo de costo/latencia
           if (urlsCandidatas.length > 0) {
             const fetchRes = await fetch("/api/tasar", {
               method: "POST",
