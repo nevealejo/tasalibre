@@ -955,7 +955,13 @@ export default async function handler(req, res) {
     const { batchSize } = req.body._meta || {};
     const LOTE = Math.min(batchSize || 500, 1000);
     const LIMITE_MS = 240000;
-    const PAUSA_MS = 250;
+    // BLOQUE 30g: se confirmó en vivo que el bloqueo suave de ArgenProp NO es
+    // aleatorio por request — es un bloqueo sostenido dentro de la misma
+    // ejecución (los mismos ~30% de filas fallan incluso reintentando con
+    // backoff). Parece un límite de ráfaga por IP/sesión de esa invocación
+    // de Vercel. Se sube la pausa entre filas de 250ms a 3s para bajar el
+    // ritmo y evitar disparar ese bloqueo en primer lugar.
+    const PAUSA_MS = 3000;
     const inicio = Date.now();
 
     let totalEnriched = 0, totalOutOfScope = 0, totalFailed = 0;
