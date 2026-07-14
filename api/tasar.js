@@ -140,6 +140,28 @@ function distanciaKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// BLOQUE 29c: Tokko cambió el esquema de respuesta de su API — precio,
+// moneda y tipo de operación ya NO vienen como campos planos (p.price,
+// p.currency, p.operation_type), sino anidados en operations[]. Cada
+// propiedad puede tener más de una operación (venta Y alquiler) y cada
+// operación puede tener más de un precio (distintas monedas). Se busca la
+// operación pedida (venta=1/alquiler=2) y dentro de esa, se prioriza el
+// precio en USD; si no hay, se toma el primero disponible.
+const opMapInverso = { 1: "venta", 2: "alquiler" };
+function extraerOperacionYPrecio(p, operationTypeIdDeseado) {
+  const operaciones = Array.isArray(p.operations) ? p.operations : [];
+  let op = operaciones.find(o => o.operation_id === operationTypeIdDeseado) || operaciones[0] || null;
+  if (!op) return { operationTypeId: null, precio: 0, moneda: "USD" };
+  const precios = Array.isArray(op.prices) ? op.prices : [];
+  const precioUsd = precios.find(pr => (pr.currency || "").toUpperCase() === "USD");
+  const precioElegido = precioUsd || precios[0] || null;
+  return {
+    operationTypeId: op.operation_id ?? null,
+    precio: precioElegido ? (parseFloat(precioElegido.price) || 0) : 0,
+    moneda: precioElegido ? (precioElegido.currency || "USD") : "USD",
+  };
+}
+
 // ── Detección de centralidad: estación de tren a <600m (proxy clave en GBA,
 // donde el valor de la tierra se concentra alrededor de las estaciones) ─────
 async function getNearbyStation(lat, lon) {
@@ -509,18 +531,20 @@ async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCoch
 
     console.log(`Tokko comparables finales: ${withCochera.length} (con distancia real: ${withCochera.filter(x => x.dist != null).length})`);
 
+    const operationTypeIdBuscado = opMap[operacion] || 1;
     return withCochera.slice(0, 8).map(({ p, dist }) => {
-      const m2cubierto = p.roofed_surface || p.total_surface || 0;
-      const precio = p.price || 0;
+      const m2cubierto = parseFloat(p.roofed_surface) || parseFloat(p.total_surface) || 0;
+      const m2totalRaw = parseFloat(p.total_surface) || m2cubierto;
+      const { precio, moneda } = extraerOperacionYPrecio(p, operationTypeIdBuscado);
       const precioM2 = m2cubierto > 0 ? Math.round(precio / m2cubierto) : 0;
       return {
         direccion: p.address || "-",
         barrio: p.location?.name || barrio,
         m2: m2cubierto,
-        m2total: p.total_surface || m2cubierto,
+        m2total: m2totalRaw,
         precio_usd: precio,
         precio_m2: precioM2,
-        moneda: p.currency || "USD",
+        moneda,
         distanciaKm: dist != null ? Math.round(dist * 100) / 100 : null,
         fuente: "Tokko Broker"
       };
@@ -550,34 +574,6 @@ export default async function handler(req, res) {
   // llama a este endpoint repetidas veces (uno por chunk), y quien realmente
   // le habla a Tokko es siempre Vercel. Protegido por SYNC_SECRET para que
   // no cualquiera pueda disparar cargas de trabajo ni escribir en la tabla.
-  // DIAG TEMPORAL 2: ver un objeto crudo real de Tokko para mapear bien
-  // operation_type_id/property_type_id (BLOQUE 29b). Borrar despues.
-  if (req.body?._diagTokkoSample) {
-    const tokkoKey = process.env.TOKKO_API_KEY;
-    const sd = {
-      current_localization_id: 26578,
-      current_localization_type: "division",
-      operation_types: [1],
-      property_types: [2],
-      price_from: 0,
-      price_to: 999999999,
-      currency: "USD",
-      filters: [],
-      with_tags: [], without_tags: [], with_custom_tags: [],
-    };
-    const params = new URLSearchParams({ format: "json", key: tokkoKey, lang: "es_ar", limit: "2", offset: "0", data: JSON.stringify(sd) });
-    const url = `https://www.tokkobroker.com/api/v1/property/search/?${params.toString()}`;
-    const r = await fetch(url, { method: "GET", redirect: "follow" });
-    const text = await r.text();
-    let parsed;
-    try { parsed = JSON.parse(text); } catch { return res.status(200).json({ status: r.status, raw: text.slice(0, 2000) }); }
-    const obj = (parsed.objects || [])[0] || {};
-    const whitelist = ["id", "operations", "type", "parking_lot_amount", "roofed_surface", "total_surface", "surface", "price", "currency"];
-    const campos = {};
-    for (const k of whitelist) campos[k] = obj[k];
-    return res.status(200).json({ status: r.status, campos, allKeys: Object.keys(obj) });
-  }
-
   if (req.body?._syncTokkoChunk) {
     const secretEsperado = process.env.SYNC_SECRET;
     const secretRecibido = req.headers["x-sync-secret"];
@@ -594,18 +590,24 @@ export default async function handler(req, res) {
       const lon = parseFloat(p.geo_long);
       const tieneCoords = Number.isFinite(lat) && Number.isFinite(lon) && (lat !== 0 || lon !== 0);
       const tieneCochera = (p.parking_lot_amount > 0) || (p.tags || []).some(t => (t.name || "").toLowerCase().includes("cochera"));
+      // BLOQUE 29c: mismo fix de esquema que en searchTokkoComparables —
+      // precio/moneda/tipo de operación salen de operations[], no de campos
+      // planos. Acá no filtramos por una operación deseada (el sync trae
+      // venta Y alquiler juntos), así que se toma la primera operación
+      // disponible en la propiedad.
+      const { operationTypeId, precio, moneda } = extraerOperacionYPrecio(p, null);
       return {
         tokko_id: p.id,
-        operation_type_id: p.operation_type ?? (p.operations && p.operations[0]?.operation_type) ?? null,
-        property_type_id: p.type?.id ?? p.property_type ?? null,
-        division_id: p.location?.division_id ?? null,
+        operation_type_id: operationTypeId,
+        property_type_id: p.type?.id ?? null,
+        division_id: p.location?.id ?? null,
         address: p.address || p.fake_address || null,
         location_name: p.location?.name || null,
         location_full: p.location?.full_location || null,
-        price: p.price || null,
-        currency: p.currency || null,
-        roofed_surface: p.roofed_surface || null,
-        total_surface: p.total_surface || null,
+        price: precio || null,
+        currency: moneda || null,
+        roofed_surface: parseFloat(p.roofed_surface) || null,
+        total_surface: parseFloat(p.total_surface) || null,
         geo_lat: tieneCoords ? lat : null,
         geo_long: tieneCoords ? lon : null,
         parking_lot_amount: p.parking_lot_amount || 0,
