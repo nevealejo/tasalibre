@@ -927,6 +927,7 @@ export default async function handler(req, res) {
 
     let totalEnriched = 0, totalOutOfScope = 0, totalFailed = 0;
     let procesadas = 0;
+    const sampleErrors = []; // BLOQUE 30c: diagnóstico — primeros errores reales, para depurar sin acceso directo a Supabase
 
     try {
       const listaRes = await fetch(
@@ -969,6 +970,7 @@ export default async function handler(req, res) {
           if (enAlcance) totalEnriched++; else totalOutOfScope++;
         } catch (e) {
           totalFailed++;
+          if (sampleErrors.length < 5) sampleErrors.push({ url: fila.url, error: String(e.message).slice(0, 200) });
           await fetch(`${SUPABASE_URL}/rest/v1/portal_properties?id=eq.${fila.id}`, {
             method: "PATCH",
             headers: { ...supaHeaders, "Prefer": "return=minimal" },
@@ -980,7 +982,8 @@ export default async function handler(req, res) {
 
       const done = filas.length < LOTE;
       console.log(`[_enrichPortalChunk] procesadas=${procesadas}, enriquecidas=${totalEnriched}, fuera_de_alcance=${totalOutOfScope}, fallidas=${totalFailed}, done=${done}`);
-      return res.status(200).json({ done, procesadas, totalEnriched, totalOutOfScope, totalFailed });
+      if (sampleErrors.length) console.log(`[_enrichPortalChunk] muestra de errores: ${JSON.stringify(sampleErrors)}`);
+      return res.status(200).json({ done, procesadas, totalEnriched, totalOutOfScope, totalFailed, sampleErrors });
     } catch (e) {
       console.error("[_enrichPortalChunk] error:", e.message);
       return res.status(500).json({ error: e.message, procesadas, totalEnriched, totalOutOfScope, totalFailed });
