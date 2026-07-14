@@ -1,17 +1,19 @@
-# BLOQUE 28: sincronización mensual de la red Tokko a Supabase.
+# BLOQUE 28e: sincronización mensual de la red Tokko a Supabase.
 #
 # Este archivo va en el repo en: .github/workflows/sync-tokko.yml
 #
-# Requiere configurar estos 3 secrets en GitHub (Settings → Secrets and
-# variables → Actions → New repository secret), con los mismos valores que
-# ya están cargados en Vercel:
-#   TOKKO_API_KEY
-#   SUPABASE_URL
-#   SUPABASE_SERVICE_ROLE_KEY   (la service role key, no la anon/public key)
+# GitHub Actions ya NO le habla a Tokko directamente (confirmado en vivo:
+# Tokko devuelve 405 a cualquier request desde los runners de GH Actions,
+# probablemente por bloqueo de IP/origen). Este workflow solo ORQUESTA: en
+# cada corrida llama repetidas veces al endpoint _syncTokkoChunk de
+# api/tasar.js en Vercel, que es quien realmente le habla a Tokko (mismo
+# origen que ya funciona en producción) y escribe en Supabase.
 #
-# También requiere que sync-tokko-network.js y su package.json (con
-# @supabase/supabase-js como dependencia) estén en el repo, por ejemplo en
-# una carpeta scripts/.
+# Requiere un solo secret en GitHub (Settings → Secrets and variables →
+# Actions → New repository secret):
+#   SYNC_SECRET   (mismo valor exacto que la variable SYNC_SECRET en Vercel)
+#
+# También requiere que sync-tokko-network.js esté en el repo (scripts/).
 #
 # Se puede disparar manualmente desde la pestaña "Actions" del repo
 # (workflow_dispatch) para probar sin esperar al día 1 del mes.
@@ -25,7 +27,7 @@ on:
   workflow_dispatch:
     inputs:
       modo_test:
-        description: "Modo prueba (--test): trae 1 sola página, no toca Supabase. Dejar en true la primera vez, para confirmar los campos antes de correr el sync nacional completo."
+        description: "Modo prueba (--test): 1 sola llamada al endpoint, sin loop completo. Dejar en true la primera vez."
         type: boolean
         default: true
 
@@ -40,17 +42,7 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Instalar dependencias
-        run: npm install @supabase/supabase-js
-
       - name: Correr sincronización
         env:
-          TOKKO_API_KEY: ${{ secrets.TOKKO_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        # BLOQUE 28b: en el disparo manual (workflow_dispatch), el checkbox
-        # "modo_test" controla si se agrega --test. En la corrida programada
-        # (schedule, el cron mensual) github.event.inputs no existe, así que
-        # el "|| false" hace que SIEMPRE corra completo (nunca en modo
-        # prueba) en la ejecución automática del día 1 de cada mes.
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
         run: node scripts/sync-tokko-network.js ${{ (github.event.inputs.modo_test || 'false') == 'true' && '--test' || '' }}
