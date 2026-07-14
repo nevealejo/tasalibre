@@ -698,7 +698,11 @@ async function fetchSitemap(url) {
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
-      headers: { "User-Agent": "TasaLibreBot/1.0 (+contacto: nevealejo@gmail.com)" },
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-AR,es;q=0.9",
+      },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status} en ${url}`);
     const buf = Buffer.from(await res.arrayBuffer());
@@ -947,7 +951,11 @@ export default async function handler(req, res) {
           try {
             pageRes = await fetch(fila.url, {
               signal: ctrl.signal,
-              headers: { "User-Agent": "TasaLibreBot/1.0 (+contacto: nevealejo@gmail.com)" },
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "es-AR,es;q=0.9",
+              },
             });
           } finally { clearTimeout(t); }
           if (!pageRes.ok) throw new Error(`HTTP ${pageRes.status}`);
