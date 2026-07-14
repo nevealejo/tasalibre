@@ -1,3 +1,5 @@
+import { gunzipSync } from "node:zlib";
+
 export const config = { maxDuration: 300 };
 
 const SUPABASE_URL = "https://qhojftormgvcdncaaftx.supabase.co";
@@ -556,6 +558,159 @@ async function searchTokkoComparables(tipo, operacion, barrio, supTotal, conCoch
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// BLOQUE 30: scraping de portales públicos (ZonaProp + ArgenProp) para
+// alimentar portal_properties — alcance Provincia de Buenos Aires + CABA.
+// Reemplaza/complementa a la red Tokko como fuente de comparables, ya que
+// la API de Tokko está limitada a ~32 propiedades sin importar el scope
+// pedido, y su panel logueado (con las ~386.000 propiedades reales) no es
+// scrapeable por restricciones de la plataforma y riesgo de cuenta.
+//
+// Mismo patrón que _syncTokkoChunk: Vercel es quien realmente pega contra
+// los portales, GitHub Actions solo orquesta llamando a estos endpoints
+// repetidas veces. Protegido por el mismo SYNC_SECRET.
+// ═══════════════════════════════════════════════════════════════════════
+
+function extraerJsonLd(html) {
+  const blocks = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  const parsed = [];
+  for (const b of blocks) {
+    try {
+      const obj = JSON.parse(b[1].trim());
+      for (const x of Array.isArray(obj) ? obj : [obj]) parsed.push(x);
+    } catch { /* bloques mal formados o irrelevantes, se ignoran */ }
+  }
+  return parsed;
+}
+
+function extraerAttr(html, attr) {
+  const m = html.match(new RegExp(attr + '="([^"]*)"'));
+  return m ? m[1] : null;
+}
+
+function parsePrecioTexto(str) {
+  if (!str) return null;
+  const limpio = String(str).replace(/[.,]/g, "");
+  const n = parseInt(limpio, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Alcance geográfico: Provincia de Buenos Aires + CABA únicamente. ArgenProp
+// ya viene pre-filtrado por el sitemap de origen (ficha-capital-federal,
+// ficha-gba-*, ficha-resto-baires), así que esto solo aplica de verdad a
+// ZonaProp, cuyo sitemap de fichas mezcla todo el país.
+function estaEnAlcanceBA(datos) {
+  const texto = `${datos.provincia || ""} ${datos.localidad || ""} ${datos.address || ""}`.toLowerCase();
+  return texto.includes("buenos aires") || texto.includes("capital federal") ||
+         texto.includes("caba") || texto.includes("ciudad autónoma") || texto.includes("ciudad autonoma");
+}
+
+// ── ArgenProp: los data-* del HTML ya vienen limpios y completos (venta/
+// alquiler, tipo, ubicación completa, precio, moneda, id de aviso) — se
+// confirmó en vivo que están presentes en el HTML servido sin JS, ideal
+// para fetch() directo desde Vercel. JSON-LD se usa solo como respaldo
+// para dirección/m² cuando el layout no trae esos data-*.
+function parseArgenPropHtml(html) {
+  const tipoOperacion = (extraerAttr(html, "data-tipo-operacion") || "").toLowerCase();
+  const tipoPropiedad = extraerAttr(html, "data-tipo-propiedad");
+  const idAviso = extraerAttr(html, "data-id-aviso");
+  const priceRaw = extraerAttr(html, "data-monto-normalizado") || extraerAttr(html, "data-price");
+
+  const ldBlocks = extraerJsonLd(html);
+  const propLd = ldBlocks.find(x => x && (x.floorSize || x.address));
+  const address = propLd?.address || {};
+  const m2 = propLd?.floorSize?.value ? parseFloat(propLd.floorSize.value) : null;
+  const ambientes = propLd?.numberOfRooms ? parseInt(propLd.numberOfRooms, 10) : null;
+  const dormitoriosAttr = extraerAttr(html, "data-dormitorios");
+
+  return {
+    external_id: idAviso || null,
+    operation_type: tipoOperacion.includes("alquiler") ? "alquiler" : tipoOperacion.includes("venta") ? "venta" : null,
+    property_type: tipoPropiedad ? tipoPropiedad.toLowerCase() : null,
+    address: address.streetAddress || null,
+    provincia: extraerAttr(html, "data-provincia"),
+    partido: extraerAttr(html, "data-partido"),
+    localidad: extraerAttr(html, "data-localidad"),
+    barrio: extraerAttr(html, "data-barrio"),
+    sub_barrio: extraerAttr(html, "data-sub-barrio"),
+    price: parsePrecioTexto(priceRaw),
+    currency: extraerAttr(html, "data-moneda") || null,
+    m2_cubierto: m2,
+    m2_total: m2,
+    ambientes,
+    dormitorios: dormitoriosAttr ? parseInt(dormitoriosAttr, 10) : null,
+  };
+}
+
+// ── ZonaProp: la ficha no tiene data-* limpios ni precio en JSON-LD. Se
+// confirmó en vivo: JSON-LD da dirección/m²/ambientes, el precio sale por
+// regex sobre el texto visible, y el tipo de operación por el prefijo de
+// la URL (probado con múltiples muestras reales: "al..." = alquiler,
+// "ve..." = venta — coincide con el propio prefijo de la palabra en
+// español, señal confiable).
+function parseZonaPropHtml(html, url) {
+  const ldBlocks = extraerJsonLd(html);
+  const propLd = ldBlocks.find(x => x && (x.floorSize || x.address));
+  const address = propLd?.address || {};
+  const m2 = propLd?.floorSize?.value ? parseFloat(propLd.floorSize.value) : null;
+  const ambientes = propLd?.numberOfRooms ? parseInt(propLd.numberOfRooms, 10) : null;
+  const dormitorios = propLd?.numberOfBedrooms ? parseInt(propLd.numberOfBedrooms, 10) : null;
+
+  const textoPlano = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ");
+  let price = null, currency = null;
+  const usdMatch = textoPlano.match(/USD\s*\$?\s*([\d][\d.,]{2,})/i);
+  if (usdMatch) {
+    price = parsePrecioTexto(usdMatch[1]);
+    currency = "USD";
+  } else {
+    const arsMatch = textoPlano.match(/\$\s*([\d][\d.,]{4,})/);
+    if (arsMatch) { price = parsePrecioTexto(arsMatch[1]); currency = "ARS"; }
+  }
+
+  const slugMatch = url.match(/clasificado\/([a-z]{2})/i);
+  const prefijo = slugMatch ? slugMatch[1].toLowerCase() : null;
+  const operation_type = prefijo === "al" ? "alquiler" : prefijo === "ve" ? "venta" : null;
+
+  return {
+    external_id: null,
+    operation_type,
+    property_type: (propLd?.["@type"] || "").toLowerCase() || null,
+    address: address.streetAddress || null,
+    provincia: address.addressRegion || null,
+    partido: null,
+    localidad: address.addressLocality || null,
+    barrio: null,
+    sub_barrio: null,
+    price,
+    currency,
+    m2_cubierto: m2,
+    m2_total: m2,
+    ambientes,
+    dormitorios,
+  };
+}
+
+// Baja un sitemap (plano o .gz), lo descomprime si hace falta, y devuelve
+// si es un índice (apunta a más sitemaps) o un urlset (URLs de fichas).
+async function fetchSitemap(url) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { "User-Agent": "TasaLibreBot/1.0 (+contacto: nevealejo@gmail.com)" },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} en ${url}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const xml = url.endsWith(".gz") ? gunzipSync(buf).toString("utf-8") : buf.toString("utf-8");
+    const isIndex = /<sitemapindex/i.test(xml);
+    const locs = [...xml.matchAll(/<loc>(.*?)<\/loc>/g)].map(m => m[1].trim());
+    return { isIndex, locs };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -666,6 +821,169 @@ export default async function handler(req, res) {
     } catch (e) {
       console.error("[_syncTokkoChunk] error:", e.message);
       return res.status(500).json({ error: e.message, offset, totalFetched });
+    }
+  }
+
+  // BLOQUE 30a: Fase 1 — descubrimiento de URLs de fichas vía sitemaps
+  // públicos de ZonaProp/ArgenProp. Recorre una cola de sitemaps en BFS:
+  // si un sitemap es un índice, encola sus hijos; si es un urlset, extrae
+  // las URLs de fichas y las upsertea en portal_properties con
+  // status='discovered' (resolution=ignore-duplicates para no pisar filas
+  // que ya fueron enriquecidas en una corrida previa). Devuelve la cola
+  // restante para que el orquestador siga llamando hasta vaciarla.
+  if (req.body?._discoverPortalUrls) {
+    const secretEsperado = process.env.SYNC_SECRET;
+    const secretRecibido = req.headers["x-sync-secret"];
+    if (!secretEsperado || secretRecibido !== secretEsperado) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+    const supaKey = process.env.SUPABASE_SECRET_KEY;
+    if (!supaKey) return res.status(500).json({ error: "Falta SUPABASE_SECRET_KEY en el servidor" });
+    const supaHeaders = { "Content-Type": "application/json", "apikey": supaKey, "Authorization": `Bearer ${supaKey}` };
+
+    const { queue: queueInicial } = req.body._meta || {};
+    // Semillas: sitemaps "ficha" (no "listing") de ArgenProp ya recortados
+    // a Provincia de Buenos Aires + CABA por región, y el único sitemap de
+    // fichas de ZonaProp (nacional, se filtra por región en la Fase 2).
+    let queue = Array.isArray(queueInicial) && queueInicial.length ? queueInicial.slice() : [
+      { source: "argenprop", url: "https://www.argenprop.com/sitemaps/sitemap-ficha-capital-federal.xml.gz" },
+      { source: "argenprop", url: "https://www.argenprop.com/sitemaps/sitemap-ficha-gba-norte.xml.gz" },
+      { source: "argenprop", url: "https://www.argenprop.com/sitemaps/sitemap-ficha-gba-sur.xml.gz" },
+      { source: "argenprop", url: "https://www.argenprop.com/sitemaps/sitemap-ficha-gba-oeste.xml.gz" },
+      { source: "argenprop", url: "https://www.argenprop.com/sitemaps/sitemap-ficha-resto-baires.xml.gz" },
+      { source: "zonaprop", url: "https://www.zonaprop.com.ar/sitemap_prop_https_1.xml.gz" },
+    ];
+
+    const LIMITE_MS = 240000;
+    const inicio = Date.now();
+    let totalUpserted = 0;
+    let sitemapsProcesados = 0;
+
+    try {
+      while (queue.length && Date.now() - inicio < LIMITE_MS) {
+        const item = queue.shift();
+        let parsed;
+        try {
+          parsed = await fetchSitemap(item.url);
+        } catch (e) {
+          console.error(`[_discoverPortalUrls] error en ${item.url}: ${e.message}`);
+          continue;
+        }
+        sitemapsProcesados++;
+
+        if (parsed.isIndex) {
+          for (const loc of parsed.locs) queue.push({ source: item.source, url: loc });
+          continue;
+        }
+
+        const urlsFicha = parsed.locs.filter(u => item.source === "zonaprop" ? u.includes("/propiedades/clasificado/") : true);
+        const filas = urlsFicha.map(u => ({ source: item.source, url: u, status: "discovered" }));
+
+        for (let i = 0; i < filas.length; i += 1000) {
+          const lote = filas.slice(i, i + 1000);
+          const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/portal_properties?on_conflict=url`, {
+            method: "POST",
+            headers: { ...supaHeaders, "Prefer": "resolution=ignore-duplicates,return=minimal" },
+            body: JSON.stringify(lote),
+          });
+          if (!upsertRes.ok) {
+            const errText = await upsertRes.text();
+            throw new Error(`Supabase upsert falló (status ${upsertRes.status}): ${errText.slice(0, 300)}`);
+          }
+          totalUpserted += lote.length;
+        }
+      }
+      const done = queue.length === 0;
+      console.log(`[_discoverPortalUrls] sitemaps procesados=${sitemapsProcesados}, urls insertadas=${totalUpserted}, cola restante=${queue.length}, done=${done}`);
+      return res.status(200).json({ done, queue, totalUpserted, sitemapsProcesados });
+    } catch (e) {
+      console.error("[_discoverPortalUrls] error:", e.message);
+      return res.status(500).json({ error: e.message, queue, totalUpserted });
+    }
+  }
+
+  // BLOQUE 30b: Fase 2 — enriquecimiento paced (~5.000/día, ritmo elegido
+  // por el usuario). Toma un lote de filas 'discovered' (las más viejas
+  // primero), visita cada ficha con fetch() directo (confirmado en vivo:
+  // ambos portales sirven el HTML ya renderizado con todos los datos, sin
+  // necesitar ejecutar JS), extrae los campos, y las pasa a 'enriched' o
+  // 'out_of_scope' (ZonaProp fuera de Buenos Aires/CABA) o 'failed'. Pausa
+  // corta entre fichas para no saturar los portales.
+  if (req.body?._enrichPortalChunk) {
+    const secretEsperado = process.env.SYNC_SECRET;
+    const secretRecibido = req.headers["x-sync-secret"];
+    if (!secretEsperado || secretRecibido !== secretEsperado) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+    const supaKey = process.env.SUPABASE_SECRET_KEY;
+    if (!supaKey) return res.status(500).json({ error: "Falta SUPABASE_SECRET_KEY en el servidor" });
+    const supaHeaders = { "Content-Type": "application/json", "apikey": supaKey, "Authorization": `Bearer ${supaKey}` };
+
+    const { batchSize } = req.body._meta || {};
+    const LOTE = Math.min(batchSize || 500, 1000);
+    const LIMITE_MS = 240000;
+    const PAUSA_MS = 250;
+    const inicio = Date.now();
+
+    let totalEnriched = 0, totalOutOfScope = 0, totalFailed = 0;
+    let procesadas = 0;
+
+    try {
+      const listaRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/portal_properties?status=eq.discovered&select=id,url,source&order=discovered_at.asc&limit=${LOTE}`,
+        { headers: supaHeaders }
+      );
+      if (!listaRes.ok) throw new Error(`Supabase select falló (status ${listaRes.status})`);
+      const filas = await listaRes.json();
+
+      for (const fila of filas) {
+        if (Date.now() - inicio > LIMITE_MS) break;
+        procesadas++;
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 12000);
+          let pageRes;
+          try {
+            pageRes = await fetch(fila.url, {
+              signal: ctrl.signal,
+              headers: { "User-Agent": "TasaLibreBot/1.0 (+contacto: nevealejo@gmail.com)" },
+            });
+          } finally { clearTimeout(t); }
+          if (!pageRes.ok) throw new Error(`HTTP ${pageRes.status}`);
+          const html = await pageRes.text();
+
+          const datos = fila.source === "argenprop" ? parseArgenPropHtml(html) : parseZonaPropHtml(html, fila.url);
+          const enAlcance = fila.source === "argenprop" ? true : estaEnAlcanceBA(datos);
+
+          const update = enAlcance
+            ? { ...datos, status: "enriched", enriched_at: new Date().toISOString(), last_error: null }
+            : { status: "out_of_scope", enriched_at: new Date().toISOString() };
+
+          const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/portal_properties?id=eq.${fila.id}`, {
+            method: "PATCH",
+            headers: { ...supaHeaders, "Prefer": "return=minimal" },
+            body: JSON.stringify(update),
+          });
+          if (!patchRes.ok) throw new Error(`Supabase update falló (status ${patchRes.status})`);
+
+          if (enAlcance) totalEnriched++; else totalOutOfScope++;
+        } catch (e) {
+          totalFailed++;
+          await fetch(`${SUPABASE_URL}/rest/v1/portal_properties?id=eq.${fila.id}`, {
+            method: "PATCH",
+            headers: { ...supaHeaders, "Prefer": "return=minimal" },
+            body: JSON.stringify({ status: "failed", last_error: String(e.message).slice(0, 300), retry_count: 1 }),
+          }).catch(() => {});
+        }
+        await new Promise(r => setTimeout(r, PAUSA_MS));
+      }
+
+      const done = filas.length < LOTE;
+      console.log(`[_enrichPortalChunk] procesadas=${procesadas}, enriquecidas=${totalEnriched}, fuera_de_alcance=${totalOutOfScope}, fallidas=${totalFailed}, done=${done}`);
+      return res.status(200).json({ done, procesadas, totalEnriched, totalOutOfScope, totalFailed });
+    } catch (e) {
+      console.error("[_enrichPortalChunk] error:", e.message);
+      return res.status(500).json({ error: e.message, procesadas, totalEnriched, totalOutOfScope, totalFailed });
     }
   }
 
