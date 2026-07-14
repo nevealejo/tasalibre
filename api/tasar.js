@@ -955,13 +955,14 @@ export default async function handler(req, res) {
     const { batchSize } = req.body._meta || {};
     const LOTE = Math.min(batchSize || 500, 1000);
     const LIMITE_MS = 240000;
-    // BLOQUE 30g: se confirmó en vivo que el bloqueo suave de ArgenProp NO es
-    // aleatorio por request — es un bloqueo sostenido dentro de la misma
-    // ejecución (los mismos ~30% de filas fallan incluso reintentando con
-    // backoff). Parece un límite de ráfaga por IP/sesión de esa invocación
-    // de Vercel. Se sube la pausa entre filas de 250ms a 3s para bajar el
-    // ritmo y evitar disparar ese bloqueo en primer lugar.
-    const PAUSA_MS = 3000;
+    // BLOQUE 30g: se probó subir la pausa entre filas de 250ms a 3s para ver
+    // si el bloqueo suave de ArgenProp era por ráfaga — NO cambió nada, la
+    // tasa de fallo se mantuvo idéntica (~30%) tanto a 250ms como a 3s. Esto
+    // confirma que es un bloqueo a nivel IP compartida de Vercel (mismo tipo
+    // de problema que ya vimos con Tokko), no algo que se arregle bajando el
+    // ritmo. Se vuelve a un valor rápido para no comprometer el rendimiento
+    // diario (~5.000/día) sin ningún beneficio real a cambio.
+    const PAUSA_MS = 300;
     const inicio = Date.now();
 
     let totalEnriched = 0, totalOutOfScope = 0, totalFailed = 0;
@@ -970,7 +971,7 @@ export default async function handler(req, res) {
 
     try {
       const listaRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/portal_properties?status=eq.discovered&select=id,url,source&order=discovered_at.asc&limit=${LOTE}`,
+        `${SUPABASE_URL}/rest/v1/portal_properties?status=eq.discovered&select=id,url,source,retry_count&order=discovered_at.asc&limit=${LOTE}`,
         { headers: supaHeaders }
       );
       if (!listaRes.ok) throw new Error(`Supabase select falló (status ${listaRes.status})`);
@@ -1040,10 +1041,23 @@ export default async function handler(req, res) {
         } catch (e) {
           totalFailed++;
           if (sampleErrors.length < 5) sampleErrors.push({ url: fila.url, error: String(e.message).slice(0, 200) });
+          // BLOQUE 30h: se confirmó que la mayoría de estos fallos son un
+          // bloqueo suave por IP compartida de Vercel, no un error real de la
+          // URL — así que reintentamos automáticamente en una corrida futura
+          // (volviendo el status a 'discovered') hasta 3 intentos, en vez de
+          // dejarlo 'failed' para siempre desde el primer fallo.
+          const intentosPrevios = fila.retry_count || 0;
+          const nuevoRetryCount = intentosPrevios + 1;
+          const estadoFinal = nuevoRetryCount < 3 ? "discovered" : "failed";
+          const patchBody = { status: estadoFinal, last_error: String(e.message).slice(0, 300), retry_count: nuevoRetryCount };
+          // Si vuelve a 'discovered', se manda al final de la cola (FIFO por
+          // discovered_at) para que no se reintente en el mismo chunk/corrida
+          // — recién se retoma cuando se agoten las filas realmente nuevas.
+          if (estadoFinal === "discovered") patchBody.discovered_at = new Date().toISOString();
           await fetch(`${SUPABASE_URL}/rest/v1/portal_properties?id=eq.${fila.id}`, {
             method: "PATCH",
             headers: { ...supaHeaders, "Prefer": "return=minimal" },
-            body: JSON.stringify({ status: "failed", last_error: String(e.message).slice(0, 300), retry_count: 1 }),
+            body: JSON.stringify(patchBody),
           }).catch(() => {});
         }
         await new Promise(r => setTimeout(r, PAUSA_MS));
