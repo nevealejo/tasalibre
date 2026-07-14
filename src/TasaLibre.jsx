@@ -1366,7 +1366,14 @@ export default function TasaLibre() {
           ? "cerca de la esquina con " + streetsPerpendiculares.slice(0, 2).join(" o ")
           : "";
         const aplicarQueriesDeCalles = (arr) => {
-          if (esCerrado || arr.length !== 5) return arr;
+          // BLOQUE 27: antes exigía arr.length === 5 exacto, así que un
+          // array de 6 (la query extra de MercadoLibre agregada abajo para
+          // sumar más candidatos con precio/m2 completo — pedido del
+          // usuario: "necesitamos minimo 4") quedaba afuera de la
+          // sustitución por calles paralelas/perpendiculares. Con length<5
+          // sigue sin aplicar a arrays más chicos (barrio cerrado, 3
+          // queries), pero sí a 5 o 6.
+          if (esCerrado || arr.length < 5) return arr;
           const out = arr.slice();
           if (paralelaQuery) out[2] = tipo + " " + op + " " + paralelaQuery + " " + barrio + " " + provincia + " precio " + monedaShort;
           if (perpendicularQuery) out[4] = tipo + " " + op + " " + geoRef + barrio + " " + provincia + " " + perpendicularQuery + " precio " + monedaShort;
@@ -1424,6 +1431,11 @@ export default function TasaLibre() {
             "depto " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + dormRef + cocheraFilter + monedaShort,
             "departamento " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
             "departamento " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
+            // BLOQUE 27: sexta query, sumada para tener más candidatos con
+            // precio+m2 completo en la misma línea (pedido: "necesitamos
+            // minimo 4" comparables) — MercadoLibre no se buscaba explícito
+            // en mercado abierto, solo en barrio cerrado.
+            "departamento " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " mercadolibre inmuebles",
           ]);
         }
         if (tipo === "casa" && casaSubtipo === "cerrado") {
@@ -1440,6 +1452,11 @@ export default function TasaLibre() {
             "casa " + geoRef + barrio + " " + provincia + " " + dormRef + supRef + op + " " + monedaShort,
             "casa " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
             "casa " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
+            // BLOQUE 27: sexta query — MercadoLibre no se buscaba explícito
+            // en mercado abierto (solo en barrio cerrado), y sus resultados
+            // suelen traer precio+m2 en la misma línea de resumen, que es
+            // justo lo que hace falta para sumar más comparables mostrables.
+            "casa " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " mercadolibre inmuebles",
           ]);
         }
         if (tipo === "ph" && deptoSubtipo === "cerrado") {
@@ -1456,6 +1473,8 @@ export default function TasaLibre() {
             "ph " + geoRef + barrio + " " + provincia + " " + op + " " + monedaShort,
             "PH " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
             "PH " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
+            // BLOQUE 27: sexta query, mismo motivo que casa/departamento.
+            "PH " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " mercadolibre inmuebles",
           ]);
         }
         if (tipo === "local") {
@@ -1551,7 +1570,9 @@ export default function TasaLibre() {
       const dolarContext = operacion === "alquiler" && dolarBlue > 0 ? " Tipo de cambio dolar blue hoy: $" + dolarBlue.toLocaleString("es-AR") + ". Si el precio está en pesos convertirlo a dolares usando ese tipo de cambio." : "";
 
       // Las búsquedas EN PARALELO — ahorra 60-90 segundos (3 para barrio
-      // cerrado, sin tocar; 5 para mercado abierto desde BLOQUE 14, cada una
+      // cerrado, sin tocar; 6 para casa/depto/PH en mercado abierto desde
+      // BLOQUE 27 — la sexta suma MercadoLibre, antes ausente ahí — y 5
+      // para lote/local que ya la tenían desde BLOQUE 14, cada una
       // con max_uses:1 — ver buildQueries y el tools de más abajo)
       const searchPromises = queries.map(q => {
         const nombreBarrioCerrado = (casaNombreBarrio || nombreBarrioPrivado || "") + (sectorBarrio ? " " + sectorBarrio : "");
