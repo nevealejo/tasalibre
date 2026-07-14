@@ -964,6 +964,20 @@ export default async function handler(req, res) {
           const datos = fila.source === "argenprop" ? parseArgenPropHtml(html) : parseZonaPropHtml(html, fila.url);
           const enAlcance = fila.source === "argenprop" ? true : estaEnAlcanceBA(datos);
 
+          // BLOQUE 30d: diagnóstico — el fetch puede devolver 200 OK con una
+          // página "vacía" (bloqueo suave / interstitial / estructura
+          // cambiada) que hace que el parseo no extraiga nada útil. Antes eso
+          // se guardaba silenciosamente como 'enriched' con todos los campos
+          // en null. Ahora, si no se pudo extraer ni precio ni tipo de
+          // operación, lo tratamos como fallo y guardamos pistas de qué
+          // devolvió realmente el fetch (para ver en sampleErrors).
+          const extraccionVacia = !datos.price && !datos.operation_type;
+          if (extraccionVacia) {
+            throw new Error(
+              `parseo_vacio htmlLen=${html.length} tieneDataAttrs=${html.includes("data-tipo-operacion")} tieneJsonLd=${html.includes("application/ld+json")} title="${(html.match(/<title>([\s\S]{0,80})/) || [])[1] || ""}"`
+            );
+          }
+
           const update = enAlcance
             ? { ...datos, status: "enriched", enriched_at: new Date().toISOString(), last_error: null }
             : { status: "out_of_scope", enriched_at: new Date().toISOString() };
