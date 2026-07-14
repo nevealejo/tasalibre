@@ -1608,6 +1608,35 @@ export default function TasaLibre() {
         }
       };
 
+      // BLOQUE 23: misma extracción de precio/m2 que extraerPrecioM2, pero
+      // devolviendo un objeto estructurado (en vez de solo empujar el pm2 a
+      // un array) para poder forzar estos comparables verificados en la
+      // lista final mostrada, sin depender de que la IA los transcriba bien.
+      const extraerComparableEstructurado = (linea, direccion, distanciaKm) => {
+        const mUsd = linea.match(/USD\s*\$?\s*([\d][\d.,]{2,})/i)
+          || linea.match(/US\$\s*([\d][\d.,]{2,})/i)
+          || linea.match(/U\$S\s*([\d][\d.,]{2,})/i);
+        const mArs = !mUsd && linea.match(/(?:ARS|AR\$)\s*([\d][\d.,]{2,})/i);
+        const mPesoSuelto = !mUsd && !mArs && linea.match(/\$\s*([\d]{1,3}(?:[.,]\d{3}){2,})/);
+        const mM2 = linea.match(/(\d+(?:[.,]\d+)?)\s*m[2²]/i);
+        if ((!mUsd && !mArs && !mPesoSuelto) || !mM2) return null;
+        const moneda = mUsd ? "usd" : "ars";
+        const precioRaw = parseInt((mUsd ? mUsd[1] : mArs ? mArs[1] : mPesoSuelto[1]).replace(/[^\d]/g, ""), 10);
+        const precioUsd = normalizarAUsd(precioRaw, moneda, dolarBlue);
+        const m2 = parseFloat(mM2[1].replace(",", "."));
+        if (!precioUsd || precioUsd <= 5000 || !(m2 > 10) || m2 >= 2000) return null;
+        const pm2 = Math.round(precioUsd / m2);
+        if (!(pm2 > 200 && pm2 < 20000)) return null;
+        return {
+          direccion: direccion || linea.slice(0, 60),
+          barrio: barrioDetectado || barrio,
+          m2, m2total: m2,
+          precio_usd: precioUsd, precio_m2: pm2, moneda: "usd",
+          distanciaKm: distanciaKm != null ? Math.round(distanciaKm * 100) / 100 : null,
+          fuente: "Búsqueda web (verificado)",
+        };
+      };
+
       // ── BLOQUE 7: los comparables de Tokko ya vienen estructurados (de una
       // API real, no de texto scrapeado) — se suman directo al ancla acá,
       // sin depender de que la IA los relea y los retranscriba bien.
@@ -1710,11 +1739,39 @@ export default function TasaLibre() {
       const RADIO_MAX_KM_AMPLIO = 2.5;
       let radioAmpliadoUsado = false;
       let candidatosVerificados = candidatosAbiertos;
+      // BLOQUE 23: mismo problema que BLOQUE 22 (Tokko) pero del lado de los
+      // comparables de búsqueda web: candidatosVerificados ya está confirmado
+      // por CODIGO (distancia real <= radio), pero hasta ahora solo se usaba
+      // como texto suelto para que la IA los "reescriba" en su JSON — y en la
+      // práctica la IA varias veces devolvió comparables=0 pese a tener 3
+      // direcciones reales y verificadas disponibles (confirmado en vivo:
+      // Cevallos 471 a 1.04km, Belgrano 447 a 0.81km, Falucho 1186 a 1.62km,
+      // ninguna terminó en parsed.comparables). Se arma acá una versión
+      // estructurada de estos candidatos para poder forzarlos en la lista
+      // final más abajo, igual que ya se hace con Tokko.
+      let comparablesWebForzados = [];
       // Mapa línea-cruda -> dirección extraída (calle+número real, no el
       // párrafo entero). Se arma una vez y se reusa para mandar a
       // geocodificar y para volver a matchear el resultado — así la
       // extracción y el filtro usan siempre la misma clave.
-      const direccionPorLinea = new Map(candidatosAbiertos.map(l => [l, extraerDireccion(l)]));
+      // BLOQUE 24: un párrafo que solo MENCIONA la dirección de la PROPIA
+      // propiedad tasada (ej. un comentario del buscador explicando por qué
+      // tal resultado no sirve, citando "Moreno 450") no es un comparable
+      // real — pero como su distancia a sí misma siempre da 0km, pasaba el
+      // filtro estricto de radio y "ocupaba" un lugar en candidatosVerificados
+      // sin aportar precio/m2 real, evitando además que se activara el
+      // fallback de radio amplio (porque el conteo ya no daba 0) aunque
+      // hubiera comparables reales apenas por fuera de 0.8km (confirmado en
+      // vivo: 3 candidatos "verificados" resultaron ser sólo la propia
+      // dirección repetida, mientras Belgrano 447 a 0.81km y Falucho 1186 a
+      // 1.62km quedaban afuera). Se descarta cualquier dirección extraída que
+      // coincida con calle+número de la propiedad misma.
+      const direccionPropiaNorm = normalizarTexto(`${calle} ${numero}`.trim());
+      const direccionPorLinea = new Map(candidatosAbiertos.map(l => {
+        const dir = extraerDireccion(l);
+        if (dir && direccionPropiaNorm && normalizarTexto(dir) === direccionPropiaNorm) return [l, null];
+        return [l, dir];
+      }));
       console.log(`[BLOQUE12] candidatosAbiertos=${candidatosAbiertos.length}, con direccion extraible=${[...direccionPorLinea.values()].filter(Boolean).length}`);
       // Log de diagnostico: texto crudo de las lineas que NO matchearon
       // ningun patron de extraerDireccion, para poder ajustar la regex con
@@ -1772,6 +1829,16 @@ export default function TasaLibre() {
               console.log(`[BLOQUE12] radio estricto (0.8km) dio 0 — usando radio amplio (${RADIO_MAX_KM_AMPLIO}km): ${candidatosRadioAmplio.length} candidatos`);
             }
           }
+          // BLOQUE 23: mientras direccionPorLinea/distanciaPorDireccion siguen
+          // en scope, arma la versión estructurada de los candidatos ya
+          // verificados por distancia real, para poder forzarlos más abajo.
+          comparablesWebForzados = candidatosVerificados
+            .map(l => {
+              const dir = direccionPorLinea.get(l);
+              const dk = dir ? distanciaPorDireccion.get(normalizarTexto(dir)) : null;
+              return extraerComparableEstructurado(l, dir, dk);
+            })
+            .filter(Boolean);
         } catch(e) { console.warn("Geocode batch falló:", e.message); }
       }
       console.log(`[BLOQUE12] candidatosVerificados finales=${candidatosVerificados.length} (radio amplio usado: ${radioAmpliadoUsado})`);
@@ -1947,6 +2014,14 @@ export default function TasaLibre() {
       // cerrado: ahí el filtro por título ya es más estricto que esto).
       if (!esCerradoSearch && Array.isArray(parsed.comparables)) {
         console.log(`[COMPS] parsed.comparables recibidos de la IA=${parsed.comparables.length}`, JSON.stringify(parsed.comparables.map(c=>c.direccion)));
+        // BLOQUE 24: si la IA por error incluye la dirección de la PROPIA
+        // propiedad tasada como si fuera un comparable (se vio pasar en el
+        // pipeline de texto — ver misma protección más arriba), se descarta
+        // antes de cualquier otro filtro, para no comparar la propiedad
+        // contra sí misma.
+        if (direccionPropiaNorm) {
+          parsed.comparables = parsed.comparables.filter(c => normalizarTexto(c.direccion || "") !== direccionPropiaNorm);
+        }
         if (!coordsPropiedad) {
           // Sin coordenadas de la propiedad no hay forma de verificar
           // distancia real — se usa el filtro de texto (calles geolocalizadas
@@ -2036,6 +2111,17 @@ export default function TasaLibre() {
         if (tokkoParaMostrar.length > 0) {
           parsed.comparables = tokkoParaMostrar.concat(parsed.comparables);
           console.log(`[COMPS] agregados ${tokkoParaMostrar.length} comparables de Tokko directo a la lista final (no dependen de que la IA los copie)`);
+        }
+      }
+      // BLOQUE 23: mismo refuerzo que BLOQUE 22, ahora para los comparables
+      // de búsqueda web ya verificados por distancia real en código (no solo
+      // por la IA). Corre solo en mercado abierto (en cerrado no se calculan).
+      if (!esCerradoSearch && comparablesWebForzados.length > 0) {
+        const direccionesYaListadas2 = new Set(parsed.comparables.map(c => normalizarTexto(c.direccion)));
+        const webParaMostrar = comparablesWebForzados.filter(c => !direccionesYaListadas2.has(normalizarTexto(c.direccion)));
+        if (webParaMostrar.length > 0) {
+          parsed.comparables = parsed.comparables.concat(webParaMostrar);
+          console.log(`[COMPS] agregados ${webParaMostrar.length} comparables web verificados directo a la lista final (no dependen de que la IA los copie)`);
         }
       }
 
