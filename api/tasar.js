@@ -569,7 +569,15 @@ export default async function handler(req, res) {
     const url = `https://www.tokkobroker.com/api/v1/property/search/?${params.toString()}`;
     const r = await fetch(url, { method: "GET", redirect: "follow" });
     const text = await r.text();
-    return res.status(200).json({ status: r.status, raw: text.slice(0, 4000) });
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { return res.status(200).json({ status: r.status, raw: text.slice(0, 2000) }); }
+    const obj = (parsed.objects || [])[0] || {};
+    const campos = {};
+    for (const k of Object.keys(obj)) {
+      if (["branch", "description", "extras", "web_price", "geo_lat", "geo_long"].includes(k)) continue;
+      campos[k] = obj[k];
+    }
+    return res.status(200).json({ status: r.status, campos });
   }
 
   if (req.body?._syncTokkoChunk) {
