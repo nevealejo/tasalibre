@@ -974,21 +974,33 @@ export default async function handler(req, res) {
         if (Date.now() - inicio > LIMITE_MS) break;
         procesadas++;
         try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 12000);
-          let pageRes;
-          try {
-            pageRes = await fetch(fila.url, {
-              signal: ctrl.signal,
-              headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "es-AR,es;q=0.9",
-              },
-            });
-          } finally { clearTimeout(t); }
-          if (!pageRes.ok) throw new Error(`HTTP ${pageRes.status}`);
-          const html = await pageRes.text();
+          // BLOQUE 30f: se confirmó en vivo que una fracción de los fetches
+          // a ArgenProp devuelven, con HTTP 200, una página de bloqueo suave
+          // fija de ~2.6KB (sin JSON-LD, sin data-*, título vacío) en vez de
+          // la ficha real (~300KB) — parece un bloqueo intermitente, no
+          // permanente por URL. Reintentamos un par de veces con backoff
+          // antes de darnos por vencidos con esa fila.
+          let html = "";
+          for (let intento = 1; intento <= 3; intento++) {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 12000);
+            let pageRes;
+            try {
+              pageRes = await fetch(fila.url, {
+                signal: ctrl.signal,
+                headers: {
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                  "Accept-Language": "es-AR,es;q=0.9",
+                },
+              });
+            } finally { clearTimeout(t); }
+            if (!pageRes.ok) throw new Error(`HTTP ${pageRes.status}`);
+            html = await pageRes.text();
+            const pareceBloqueo = html.length < 5000 && !html.includes("application/ld+json");
+            if (!pareceBloqueo || intento === 3) break;
+            await new Promise(r => setTimeout(r, 900 * intento));
+          }
 
           const datos = fila.source === "argenprop" ? parseArgenPropHtml(html, fila.url) : parseZonaPropHtml(html, fila.url);
           const enAlcance = fila.source === "argenprop" ? true : estaEnAlcanceBA(datos);
