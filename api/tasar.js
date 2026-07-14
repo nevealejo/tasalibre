@@ -548,6 +548,71 @@ export default async function handler(req, res) {
   // llama a este endpoint repetidas veces (uno por chunk), y quien realmente
   // le habla a Tokko es siempre Vercel. Protegido por SYNC_SECRET para que
   // no cualquiera pueda disparar cargas de trabajo ni escribir en la tabla.
+  // DIAG TEMPORAL: probar variantes de método/formato contra Tokko para
+  // diagnosticar el 405 "GET" que empezó a aparecer incluso desde Vercel
+  // (origen que antes funcionaba). Se puede borrar una vez resuelto.
+  if (req.body?._diagTokko) {
+    const tokkoKey = process.env.TOKKO_API_KEY;
+    const sd = {
+      current_localization_id: 26578,
+      current_localization_type: "division",
+      operation_types: [1],
+      property_types: [2],
+      price_from: 0,
+      price_to: 999999999,
+      currency: "USD",
+      filters: [],
+      with_tags: [], without_tags: [], with_custom_tags: [],
+    };
+    const base = "https://www.tokkobroker.com/api/v1/property/search/";
+    const resultados = {};
+
+    const probar = async (nombre, fn) => {
+      try {
+        const r = await fn();
+        const status = r.status;
+        const text = await r.text();
+        resultados[nombre] = { status, body: text.slice(0, 300) };
+      } catch (e) {
+        resultados[nombre] = { error: e.message };
+      }
+    };
+
+    // Variante A: POST tal cual lo hacemos hoy (para reconfirmar el fallo)
+    await probar("A_post_actual", async () => {
+      const params = new URLSearchParams({ format: "json", key: tokkoKey, lang: "es_ar", limit: "5", offset: "0" });
+      return fetch(`${base}?${params.toString()}`, {
+        method: "POST", redirect: "manual",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: sd }),
+      });
+    });
+
+    // Variante B: GET con data como query param JSON (patrón del widget web de Tokko)
+    await probar("B_get_data_json", async () => {
+      const params = new URLSearchParams({ format: "json", key: tokkoKey, lang: "es_ar", limit: "5", offset: "0", data: JSON.stringify(sd) });
+      return fetch(`${base}?${params.toString()}`, { method: "GET", redirect: "manual" });
+    });
+
+    // Variante C: GET siguiendo redirects automáticamente (por si el 405 es de un redirect que SI acepta GET)
+    await probar("C_get_data_json_follow", async () => {
+      const params = new URLSearchParams({ format: "json", key: tokkoKey, lang: "es_ar", limit: "5", offset: "0", data: JSON.stringify(sd) });
+      return fetch(`${base}?${params.toString()}`, { method: "GET", redirect: "follow" });
+    });
+
+    // Variante D: POST siguiendo redirects automáticamente en vez de manual
+    await probar("D_post_follow", async () => {
+      const params = new URLSearchParams({ format: "json", key: tokkoKey, lang: "es_ar", limit: "5", offset: "0" });
+      return fetch(`${base}?${params.toString()}`, {
+        method: "POST", redirect: "follow",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: sd }),
+      });
+    });
+
+    return res.status(200).json({ tokkoKeyPresente: !!tokkoKey, resultados });
+  }
+
   if (req.body?._syncTokkoChunk) {
     const secretEsperado = process.env.SYNC_SECRET;
     const secretRecibido = req.headers["x-sync-secret"];
