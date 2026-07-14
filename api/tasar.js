@@ -537,6 +537,104 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
+  // BLOQUE 28e: chunk del sync mensual de la red Tokko (ver scripts/
+  // sync-tokko-network.js). Corre ACÁ (en Vercel), no desde GitHub Actions,
+  // porque se confirmó en vivo que Tokko devuelve 405 a las 4 variantes de
+  // body probadas cuando el request sale desde los runners de GitHub
+  // Actions (IPs públicas de datacenter, probablemente bloqueadas por
+  // Tokko/su WAF), mientras que desde Vercel (mismo origen que ya usa
+  // searchTokkoComparables con éxito en producción) funciona normal. GitHub
+  // Actions sigue disparando el cron mensual, pero solo como orquestador:
+  // llama a este endpoint repetidas veces (uno por chunk), y quien realmente
+  // le habla a Tokko es siempre Vercel. Protegido por SYNC_SECRET para que
+  // no cualquiera pueda disparar cargas de trabajo ni escribir en la tabla.
+  if (req.body?._syncTokkoChunk) {
+    const secretEsperado = process.env.SYNC_SECRET;
+    const secretRecibido = req.headers["x-sync-secret"];
+    if (!secretEsperado || secretRecibido !== secretEsperado) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+    const { offset: offsetInicial, dataBody } = req.body._meta || {};
+    const supaKey = process.env.SUPABASE_SECRET_KEY;
+    if (!supaKey) return res.status(500).json({ error: "Falta SUPABASE_SECRET_KEY en el servidor" });
+    const supaHeaders = { "Content-Type": "application/json", "apikey": supaKey, "Authorization": `Bearer ${supaKey}` };
+
+    const mapPropiedadChunk = (p) => {
+      const lat = parseFloat(p.geo_lat);
+      const lon = parseFloat(p.geo_long);
+      const tieneCoords = Number.isFinite(lat) && Number.isFinite(lon) && (lat !== 0 || lon !== 0);
+      const tieneCochera = (p.parking_lot_amount > 0) || (p.tags || []).some(t => (t.name || "").toLowerCase().includes("cochera"));
+      return {
+        tokko_id: p.id,
+        operation_type_id: p.operation_type ?? (p.operations && p.operations[0]?.operation_type) ?? null,
+        property_type_id: p.type?.id ?? p.property_type ?? null,
+        division_id: p.location?.division_id ?? null,
+        address: p.address || p.fake_address || null,
+        location_name: p.location?.name || null,
+        location_full: p.location?.full_location || null,
+        price: p.price || null,
+        currency: p.currency || null,
+        roofed_surface: p.roofed_surface || null,
+        total_surface: p.total_surface || null,
+        geo_lat: tieneCoords ? lat : null,
+        geo_long: tieneCoords ? lon : null,
+        parking_lot_amount: p.parking_lot_amount || 0,
+        has_cochera: !!tieneCochera,
+        publication_title: p.publication_title || null,
+        fake_address: p.fake_address || null,
+        raw: p,
+        active: true,
+        synced_at: new Date().toISOString(),
+      };
+    };
+
+    const PAGE_SIZE_CHUNK = 40;
+    // Presupuesto de tiempo conservador: maxDuration del handler es 300s
+    // (ver export const config arriba); se corta a los 240s para dejar
+    // margen de sobra para la última página + el upsert en curso.
+    const LIMITE_MS = 240000;
+    const inicioChunk = Date.now();
+    let offset = offsetInicial || 0;
+    let totalFetched = 0;
+    let totalEsperado = null;
+    let done = false;
+
+    try {
+      while (Date.now() - inicioChunk < LIMITE_MS) {
+        const params = new URLSearchParams({ format: "json", key: process.env.TOKKO_API_KEY, lang: "es_ar", limit: String(PAGE_SIZE_CHUNK), offset: String(offset) });
+        const url = `https://www.tokkobroker.com/api/v1/property/search/?${params.toString()}`;
+        const res2 = await postJsonSiguiendoRedirects(url, { data: dataBody }, { "Content-Type": "application/json" }, undefined);
+        const rawText = await res2.text();
+        let data;
+        try { data = JSON.parse(rawText); }
+        catch { throw new Error(`Respuesta no-JSON de Tokko (status ${res2.status}): ${rawText.slice(0, 200)}`); }
+        const objetos = data.objects || [];
+        if (totalEsperado === null && data.meta?.total_count != null) totalEsperado = data.meta.total_count;
+        if (objetos.length === 0) { done = true; break; }
+
+        const filas = objetos.map(mapPropiedadChunk);
+        const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/tokko_properties?on_conflict=tokko_id`, {
+          method: "POST",
+          headers: { ...supaHeaders, "Prefer": "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(filas),
+        });
+        if (!upsertRes.ok) {
+          const errText = await upsertRes.text();
+          throw new Error(`Supabase upsert falló (status ${upsertRes.status}): ${errText.slice(0, 300)}`);
+        }
+
+        totalFetched += objetos.length;
+        offset += PAGE_SIZE_CHUNK;
+        if (totalEsperado !== null && offset >= totalEsperado) { done = true; break; }
+      }
+      console.log(`[_syncTokkoChunk] offset final=${offset}, fetched este chunk=${totalFetched}, done=${done}, total=${totalEsperado}`);
+      return res.status(200).json({ done, offset, totalFetched, totalEsperado });
+    } catch (e) {
+      console.error("[_syncTokkoChunk] error:", e.message);
+      return res.status(500).json({ error: e.message, offset, totalFetched });
+    }
+  }
+
   // Rate limiting por IP — máx 16 llamadas/día (≈4 tasaciones)
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "";
   const allowed = await checkRateLimit(ip);
