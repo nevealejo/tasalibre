@@ -71,6 +71,9 @@ async function correrEnriquecimiento() {
     totalFailed += data.totalFailed || 0;
     totalProcesadas += data.procesadas || 0;
     console.log(`   procesadas=${data.procesadas}, enriquecidas=${data.totalEnriched}, fuera_de_alcance=${data.totalOutOfScope}, fallidas=${data.totalFailed}, done=${data.done}`);
+    if (data.sampleErrors && data.sampleErrors.length) {
+      console.log(`   muestra de errores: ${JSON.stringify(data.sampleErrors, null, 2)}`);
+    }
     // Si el chunk no encontró más filas 'discovered' para procesar (done y
     // procesadas=0), no tiene sentido seguir insistiendo hoy.
     if (data.done && (data.procesadas || 0) === 0) {
