@@ -1,0 +1,54 @@
+name: Scraper de portales (ZonaProp + ArgenProp) a Supabase
+
+on:
+  # Fase 1 (descubrimiento): corre 1 vez por semana para agarrar
+  # publicaciones nuevas de los sitemaps (los "viejos" ya quedan
+  # guardados con status='discovered' y no se duplican).
+  schedule:
+    - cron: "0 6 * * 1"   # Fase 1 — lunes 06:00 UTC (03:00 Arg)
+    - cron: "0 9 * * *"   # Fase 2 — todos los días 09:00 UTC (06:00 Arg)
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "Qué fase correr"
+        required: true
+        default: "enrich"
+        type: choice
+        options:
+          - discover
+          - enrich
+      meta_diaria:
+        description: "Meta de fichas a enriquecer en esta corrida (solo modo enrich)"
+        required: false
+        default: "5000"
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Determinar modo (cron vs manual)
+        id: modo
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "modo=${{ inputs.modo }}" >> "$GITHUB_OUTPUT"
+            echo "meta_diaria=${{ inputs.meta_diaria }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 6 * * 1" ]; then
+            echo "modo=discover" >> "$GITHUB_OUTPUT"
+            echo "meta_diaria=5000" >> "$GITHUB_OUTPUT"
+          else
+            echo "modo=enrich" >> "$GITHUB_OUTPUT"
+            echo "meta_diaria=5000" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Correr scraper
+        env:
+          VERCEL_ENDPOINT: https://tasalibre.vercel.app/api/tasar
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+          META_DIARIA: ${{ steps.modo.outputs.meta_diaria }}
+        run: node scripts/sync-portal-scraper.js ${{ steps.modo.outputs.modo }}
