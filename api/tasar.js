@@ -572,12 +572,10 @@ export default async function handler(req, res) {
     let parsed;
     try { parsed = JSON.parse(text); } catch { return res.status(200).json({ status: r.status, raw: text.slice(0, 2000) }); }
     const obj = (parsed.objects || [])[0] || {};
+    const whitelist = ["id", "operation_type", "operations", "type", "property_type", "location", "tags", "parking_lot_amount", "roofed_surface", "total_surface", "price", "currency", "status"];
     const campos = {};
-    for (const k of Object.keys(obj)) {
-      if (["branch", "description", "extras", "web_price", "geo_lat", "geo_long"].includes(k)) continue;
-      campos[k] = obj[k];
-    }
-    return res.status(200).json({ status: r.status, campos });
+    for (const k of whitelist) campos[k] = obj[k];
+    return res.status(200).json({ status: r.status, campos, allKeys: Object.keys(obj) });
   }
 
   if (req.body?._syncTokkoChunk) {
