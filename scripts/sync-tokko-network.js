@@ -120,42 +120,106 @@ function mapPropiedad(p) {
   };
 }
 
-async function fetchPagina(offset) {
+function buildSearchUrl(offset) {
   const params = new URLSearchParams({
     format: "json", key: TOKKO_KEY, lang: "es_ar",
     limit: String(PAGE_SIZE), offset: String(offset),
   });
-  const url = `https://www.tokkobroker.com/api/v1/property/search/?${params.toString()}`;
-  const body = {
-    data: {
-      // network=0 trae TODA la red, todas las divisiones a la vez.
-      current_localization_id: 0,
-      current_localization_type: "network",
-      // Todos los tipos de operación y propiedad en un solo pase, para no
-      // tener que repetir la paginación completa una vez por combinación.
-      operation_types: [1, 2],
-      property_types: [1, 2, 3, 7, 13],
-      price_from: 0,
-      price_to: 999999999,
-      currency: "USD",
-      filters: [],
-      with_tags: [], without_tags: [], with_custom_tags: [],
-    },
-  };
+  return `https://www.tokkobroker.com/api/v1/property/search/?${params.toString()}`;
+}
 
+// Devuelve {status, text} crudo, sin asumir que la respuesta es JSON — para
+// poder comparar variantes de body en el diagnóstico (ver diagnosticarBody).
+async function fetchRaw(offset, dataBody) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 15000);
   try {
     const res = await postJsonSiguiendoRedirects(
-      url, body, { "Content-Type": "application/json" }, ctrl.signal
+      buildSearchUrl(offset), { data: dataBody }, { "Content-Type": "application/json" }, ctrl.signal
     );
-    const rawText = await res.text();
-    let data;
-    try { data = JSON.parse(rawText); }
-    catch { throw new Error(`Respuesta no-JSON (status ${res.status}): ${rawText.slice(0, 200)}`); }
-    return { objetos: data.objects || [], total: data.meta?.total_count ?? null };
+    const text = await res.text();
+    return { status: res.status, text };
   } finally {
     clearTimeout(t);
+  }
+}
+
+async function fetchPagina(offset, dataBody) {
+  const { status, text } = await fetchRaw(offset, dataBody);
+  let data;
+  try { data = JSON.parse(text); }
+  catch { throw new Error(`Respuesta no-JSON (status ${status}): ${text.slice(0, 200)}`); }
+  return { objetos: data.objects || [], total: data.meta?.total_count ?? null };
+}
+
+const bodyBase = {
+  price_from: 0, price_to: 999999999, currency: "USD",
+  filters: [], with_tags: [], without_tags: [], with_custom_tags: [],
+};
+
+// BLOQUE 28d: la corrida --test original (network=0 + property_types/
+// operation_types como ARRAYS de varios valores) dio 405 incluso después
+// de agregar postJsonSiguiendoRedirects — o sea que NO era un problema de
+// redirect (ese fix ya está bien puesto), es un rechazo directo de Tokko a
+// ESE body puntual. Como producción (searchTokkoComparables) nunca prueba
+// esa combinación exacta (siempre pide UN property_type y UN operation_type
+// a la vez, y solo cae a "network" cuando el scoping por división da <5
+// resultados), hay 2 sospechosos sin confirmar: (a) arrays con más de un
+// valor en property_types/operation_types, (b) el scope "network" en sí.
+// Se prueban acá 4 variantes en la misma corrida para aislar cuál es.
+async function diagnosticarBody() {
+  const variantes = [
+    {
+      nombre: "V1: network + MULTI-tipo (la que ya sabemos que da 405)",
+      body: { ...bodyBase, current_localization_id: 0, current_localization_type: "network", operation_types: [1, 2], property_types: [1, 2, 3, 7, 13] },
+    },
+    {
+      nombre: "V2: network + UN SOLO tipo (depto/venta)",
+      body: { ...bodyBase, current_localization_id: 0, current_localization_type: "network", operation_types: [1], property_types: [2] },
+    },
+  ];
+
+  // V3/V4 necesitan resolver primero un id de división real (igual que
+  // hace producción vía location/quicksearch) — probamos con "Quilmes" por
+  // ser la localidad ya confirmada funcionando en producción.
+  try {
+    const locCtrl = new AbortController();
+    setTimeout(() => locCtrl.abort(), 8000);
+    const locUrl = `https://www.tokkobroker.com/api/v1/location/quicksearch/?format=json&lang=es_ar&key=${TOKKO_KEY}&q=Quilmes`;
+    const locRes = await fetch(locUrl, { signal: locCtrl.signal });
+    const locData = JSON.parse(await locRes.text());
+    const match = (locData.objects || []).find(l => l.type === "Localidad") || (locData.objects || [])[0];
+    if (match) {
+      variantes.push({
+        nombre: `V3: division=${match.id} (Quilmes) + UN SOLO tipo (depto/venta)`,
+        body: { ...bodyBase, current_localization_id: match.id, current_localization_type: "division", operation_types: [1], property_types: [2] },
+      });
+      variantes.push({
+        nombre: `V3b: division=${match.id} (Quilmes) + MULTI-tipo`,
+        body: { ...bodyBase, current_localization_id: match.id, current_localization_type: "division", operation_types: [1, 2], property_types: [1, 2, 3, 7, 13] },
+      });
+    } else {
+      console.log("location/quicksearch para 'Quilmes' no devolvió resultados, se omiten V3/V3b.");
+    }
+  } catch (e) {
+    console.log("location/quicksearch falló, se omiten V3/V3b:", e.message);
+  }
+
+  for (const v of variantes) {
+    console.log(`\n── ${v.nombre} ──`);
+    try {
+      const { status, text } = await fetchRaw(0, v.body);
+      console.log(`Status: ${status}`);
+      try {
+        const data = JSON.parse(text);
+        console.log(`OK — objects: ${(data.objects || []).length}, total_count: ${data.meta?.total_count ?? "?"}`);
+      } catch {
+        console.log(`Respuesta NO-JSON: ${text.slice(0, 200)}`);
+      }
+    } catch (e) {
+      console.log(`Excepción: ${e.message}`);
+    }
+    await sleep(500);
   }
 }
 
@@ -165,29 +229,21 @@ async function upsertLote(lote) {
   if (error) throw new Error(`Supabase upsert falló: ${error.message}`);
 }
 
-// Modo de validación: trae UNA sola página (40 propiedades), la imprime
-// cruda (primer objeto completo) y el resultado ya mapeado, sin tocar
-// Supabase. Correr esto primero (`node sync-tokko-network.js --test`)
-// antes de confiar en el sync nacional completo — sirve para: (a)
-// confirmar que TOKKO_API_KEY funciona y trae datos reales, (b) revisar a
-// ojo los campos operation_type_id/property_type_id comentados arriba, (c)
-// ver cuántas propiedades reporta meta.total_count en total.
-async function testUnaPagina() {
-  console.log("Modo --test: trayendo una sola página de la red completa, sin escribir en Supabase...\n");
-  const pagina = await fetchPagina(0);
-  console.log(`meta.total_count reportado por Tokko: ${pagina.total}`);
-  console.log(`Propiedades en esta página: ${pagina.objetos.length}\n`);
-  if (pagina.objetos.length > 0) {
-    console.log("── Primer objeto CRUDO (revisar operation_type/type acá): ──");
-    console.log(JSON.stringify(pagina.objetos[0], null, 2));
-    console.log("\n── Mismo objeto ya MAPEADO a la fila de tokko_properties: ──");
-    console.log(JSON.stringify(mapPropiedad(pagina.objetos[0]), null, 2));
-  }
-}
+// BODY que usa el sync nacional completo (main(), más abajo). Queda como
+// constante separada para poder ajustarla fácil una vez que diagnosticarBody
+// confirme qué combinación acepta Tokko sin dar 405.
+const BODY_NACIONAL_COMPLETO = {
+  ...bodyBase,
+  current_localization_id: 0,
+  current_localization_type: "network",
+  operation_types: [1, 2],
+  property_types: [1, 2, 3, 7, 13],
+};
 
 async function main() {
   if (process.argv.includes("--test")) {
-    await testUnaPagina();
+    console.log("Modo --test: probando 4 variantes de body contra Tokko, sin escribir en Supabase...\n");
+    await diagnosticarBody();
     return;
   }
   const inicio = new Date();
@@ -209,7 +265,7 @@ async function main() {
     while (true) {
       let pagina;
       try {
-        pagina = await fetchPagina(offset);
+        pagina = await fetchPagina(offset, BODY_NACIONAL_COMPLETO);
         intentosFallidosConsecutivos = 0;
       } catch (e) {
         intentosFallidosConsecutivos++;
