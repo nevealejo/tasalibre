@@ -1600,7 +1600,32 @@ export default function TasaLibre() {
         .then(t => {
           const data = JSON.parse(t);
           if (data.error) return { error: data.error.message || "Error en búsqueda" };
-          return { text: (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n") };
+          const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+          // BLOQUE 26: capturar las URLs REALES que devolvió la búsqueda web
+          // (no solo el resumen en texto que arma la IA). Confirmado en vivo
+          // que el resumen de texto puede traer precio/m2 distintos para la
+          // MISMA publicación real en corridas distintas — la IA parafrasea,
+          // no transcribe. Estas URLs se usan más abajo para abrir la
+          // publicación real y sacar el dato directo del HTML, en vez de
+          // confiar en el resumen. Vienen en bloques "web_search_tool_result"
+          // y/o como citas dentro de los bloques de texto (se buscan ambas
+          // formas por si el shape exacto de la respuesta varía).
+          const urls = [];
+          const vistos = new Set();
+          const agregarUrl = (url, title) => {
+            if (!url || vistos.has(url)) return;
+            vistos.add(url);
+            urls.push({ url, title: title || "" });
+          };
+          for (const b of data.content || []) {
+            if (b.type === "web_search_tool_result" && Array.isArray(b.content)) {
+              for (const r of b.content) agregarUrl(r?.url, r?.title);
+            }
+            if (b.type === "text" && Array.isArray(b.citations)) {
+              for (const c of b.citations) agregarUrl(c?.url, c?.title);
+            }
+          }
+          return { text, urls };
         })
         .catch(e => { console.warn("Search failed:", e.message); return { error: e.message }; });
       });
@@ -1888,6 +1913,57 @@ export default function TasaLibre() {
         throw new Error("Error en búsqueda de comparables: " + searchErrors[0]);
       }
 
+      // BLOQUE 26: fetch + parse de la página REAL de cada publicación, en vez
+      // de confiar en el resumen de texto que arma la IA. Confirmado en vivo
+      // (13/07-14/07): la MISMA publicación real (Belgrano 447, Quilmes) dio
+      // dos superficies distintas en dos corridas (403m² una vez, 172m² la
+      // otra) — la IA parafrasea el resultado de búsqueda, no lo transcribe,
+      // así que cualquier número que solo salga de ese resumen no es
+      // confiable. Acá se abren las URLs reales que devolvió la búsqueda
+      // (capturadas más arriba en cada searchResult) y se extrae precio/m2/
+      // dirección directo del HTML, verificando también la distancia real
+      // por geocode antes de aceptar cada una — mismo criterio que el resto
+      // del pipeline (BLOQUE 12/23/24). No aplica a barrio cerrado (mismo
+      // alcance que BLOQUE 23/25).
+      let comparablesPaginaReal = [];
+      if (!esCerradoSearch && coordsPropiedad) {
+        try {
+          const urlsCandidatas = [...new Map(
+            searchResults.flatMap(r => r.urls || []).map(u => [u.url, u])
+          ).values()].slice(0, 8); // tope defensivo de costo/latencia
+          if (urlsCandidatas.length > 0) {
+            const fetchRes = await fetch("/api/tasar", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({
+                _fetchListings: true,
+                _meta: {
+                  urls: urlsCandidatas.map(u => u.url),
+                  origenLat: coordsPropiedad.lat, origenLon: coordsPropiedad.lon,
+                  contexto: [barrioDetectado || barrio, provincia].filter(Boolean).join(", "),
+                },
+              }),
+            });
+            const fetchData = await fetchRes.json();
+            console.log(`[BLOQUE26] URLs candidatas=${urlsCandidatas.length}, verificadas=${(fetchData.resultados || []).length}`);
+            comparablesPaginaReal = (fetchData.resultados || []).map(r => {
+              const precioUsd = normalizarAUsd(r.precioRaw, r.moneda, dolarBlue);
+              if (!precioUsd || !(r.m2 > 0)) return null;
+              const pm2 = Math.round(precioUsd / r.m2);
+              if (!(pm2 > 200 && pm2 < 20000)) return null;
+              preciosM2Calculados.push(pm2);
+              return {
+                direccion: r.direccion, barrio: barrioDetectado || barrio,
+                m2: r.m2, m2total: r.m2,
+                precio_usd: precioUsd, precio_m2: pm2, moneda: "usd",
+                distanciaKm: r.distanciaKm, fuente: "Publicación verificada (página real)",
+              };
+            }).filter(Boolean);
+          }
+        } catch (e) { console.warn("BLOQUE26 fetchListings falló:", e.message); }
+      }
+
       setLoadStep(4);
 
       const msgContent = [];
@@ -2149,9 +2225,26 @@ export default function TasaLibre() {
           console.log(`[COMPS] agregados ${tokkoParaMostrar.length} comparables de Tokko directo a la lista final (no dependen de que la IA los copie)`);
         }
       }
+      // BLOQUE 26: comparables verificados abriendo la página REAL de la
+      // publicación (precio/m2/dirección sacados del HTML, no del resumen de
+      // la IA) — la fuente más confiable después de Tokko, porque el dato
+      // sale directo de la publicación en vez de una paráfrasis. Se agregan
+      // ANTES que los de BLOQUE 23 (texto/regex) para que, si ambos
+      // encuentran la misma dirección, gane la versión verificada por
+      // página real en el de-dup.
+      if (!esCerradoSearch && comparablesPaginaReal.length > 0) {
+        const direccionesYaListadasPR = new Set(parsed.comparables.map(c => normalizarTexto(c.direccion)));
+        const paginaRealParaMostrar = comparablesPaginaReal.filter(c => !direccionesYaListadasPR.has(normalizarTexto(c.direccion)));
+        if (paginaRealParaMostrar.length > 0) {
+          parsed.comparables = paginaRealParaMostrar.concat(parsed.comparables);
+          console.log(`[COMPS] agregados ${paginaRealParaMostrar.length} comparables verificados desde la página real (no dependen del resumen de la IA)`);
+        }
+      }
       // BLOQUE 23: mismo refuerzo que BLOQUE 22, ahora para los comparables
       // de búsqueda web ya verificados por distancia real en código (no solo
       // por la IA). Corre solo en mercado abierto (en cerrado no se calculan).
+      // Es la fuente MENOS confiable de las tres (Tokko/página real/texto),
+      // así que corre último y solo llena huecos que las otras no cubrieron.
       if (!esCerradoSearch && comparablesWebForzados.length > 0) {
         const direccionesYaListadas2 = new Set(parsed.comparables.map(c => normalizarTexto(c.direccion)));
         const webParaMostrar = comparablesWebForzados.filter(c => !direccionesYaListadas2.has(normalizarTexto(c.direccion)));
