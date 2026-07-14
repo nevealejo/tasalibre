@@ -610,7 +610,7 @@ function estaEnAlcanceBA(datos) {
 // confirmó en vivo que están presentes en el HTML servido sin JS, ideal
 // para fetch() directo desde Vercel. JSON-LD se usa solo como respaldo
 // para dirección/m² cuando el layout no trae esos data-*.
-function parseArgenPropHtml(html) {
+function parseArgenPropHtml(html, url) {
   const tipoOperacion = (extraerAttr(html, "data-tipo-operacion") || "").toLowerCase();
   const tipoPropiedad = extraerAttr(html, "data-tipo-propiedad");
   const idAviso = extraerAttr(html, "data-id-aviso");
@@ -623,18 +623,47 @@ function parseArgenPropHtml(html) {
   const ambientes = propLd?.numberOfRooms ? parseInt(propLd.numberOfRooms, 10) : null;
   const dormitoriosAttr = extraerAttr(html, "data-dormitorios");
 
+  // BLOQUE 30e: fallback — se confirmó en vivo que algunos templates de
+  // ArgenProp (p.ej. desarrollos "en pozo") NO traen los data-tipo-operacion
+  // / data-price aunque el fetch sea 200 OK con el HTML completo. En esos
+  // casos sí está siempre presente el bloque visible "titlebar" con el
+  // precio y un texto "Venta|Alquiler en Barrio, Localidad".
+  let precioFallback = null, monedaFallback = null;
+  const precioMatch = html.match(/class="titlebar__price">\s*([\s\S]{0,40}?)<\/p>/);
+  if (precioMatch) {
+    const bloque = precioMatch[1];
+    const monedaMatch = bloque.match(/USD|\$/);
+    const numMatch = bloque.match(/([\d][\d.,]{2,})/);
+    if (monedaMatch) monedaFallback = monedaMatch[0] === "USD" ? "USD" : "ARS";
+    if (numMatch) precioFallback = parsePrecioTexto(numMatch[1]);
+  }
+
+  let operacionFallback = null, barrioFallback = null, localidadFallback = null;
+  const tituloMatch = html.match(/class="titlebar__title">([^<]*)<\/h2>/);
+  if (tituloMatch) {
+    const texto = tituloMatch[1].trim(); // ej: "Venta en Villa Urquiza, Capital Federal"
+    const m = texto.match(/^(Venta|Alquiler)\s+en\s+([^,]+),?\s*(.*)$/i);
+    if (m) {
+      operacionFallback = m[1].toLowerCase();
+      barrioFallback = m[2].trim() || null;
+      localidadFallback = m[3].trim() || null;
+    }
+  }
+
+  const idUrlMatch = (url || "").match(/--(\d+)(?:\.html)?$/);
+
   return {
-    external_id: idAviso || null,
-    operation_type: tipoOperacion.includes("alquiler") ? "alquiler" : tipoOperacion.includes("venta") ? "venta" : null,
+    external_id: idAviso || (idUrlMatch ? idUrlMatch[1] : null),
+    operation_type: tipoOperacion.includes("alquiler") ? "alquiler" : tipoOperacion.includes("venta") ? "venta" : operacionFallback,
     property_type: tipoPropiedad ? tipoPropiedad.toLowerCase() : null,
     address: address.streetAddress || null,
-    provincia: extraerAttr(html, "data-provincia"),
+    provincia: extraerAttr(html, "data-provincia") || localidadFallback || null,
     partido: extraerAttr(html, "data-partido"),
-    localidad: extraerAttr(html, "data-localidad"),
-    barrio: extraerAttr(html, "data-barrio"),
+    localidad: extraerAttr(html, "data-localidad") || address.addressLocality || null,
+    barrio: extraerAttr(html, "data-barrio") || barrioFallback || address.addressRegion || null,
     sub_barrio: extraerAttr(html, "data-sub-barrio"),
-    price: parsePrecioTexto(priceRaw),
-    currency: extraerAttr(html, "data-moneda") || null,
+    price: parsePrecioTexto(priceRaw) ?? precioFallback,
+    currency: extraerAttr(html, "data-moneda") || monedaFallback,
     m2_cubierto: m2,
     m2_total: m2,
     ambientes,
@@ -961,7 +990,7 @@ export default async function handler(req, res) {
           if (!pageRes.ok) throw new Error(`HTTP ${pageRes.status}`);
           const html = await pageRes.text();
 
-          const datos = fila.source === "argenprop" ? parseArgenPropHtml(html) : parseZonaPropHtml(html, fila.url);
+          const datos = fila.source === "argenprop" ? parseArgenPropHtml(html, fila.url) : parseZonaPropHtml(html, fila.url);
           const enAlcance = fila.source === "argenprop" ? true : estaEnAlcanceBA(datos);
 
           // BLOQUE 30d: diagnóstico — el fetch puede devolver 200 OK con una
