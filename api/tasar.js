@@ -179,6 +179,83 @@ async function getNearbyStreets(lat, lon, radius) {
   } catch { return []; }
 }
 
+// BLOQUE 25: clasificación de calles vecinas por GEOMETRÍA REAL (no solo
+// "cuáles hay cerca", sino "cuáles son paralelas y cuáles perpendiculares a
+// la calle de la propiedad"). Idea del usuario: en una grilla regular (sin
+// diagonales), las calles paralelas a la propia suelen mantener la MISMA
+// numeración de una calle a la otra, y las perpendiculares sirven como
+// referencia de cruce/esquina. Esto permite armar búsquedas mucho más
+// específicas ("Lavalle 450" en vez de "cerca de Moreno, Quilmes"). El caso
+// que rompe el supuesto de numeración son ciudades con diagonales (ej. La
+// Plata) — pero como cualquier candidato encontrado igual se verifica
+// después por distancia real geocodificada (BLOQUE 12/23/24), una
+// estimación de numeración errónea simplemente no encuentra nada útil en esa
+// query puntual, no genera riesgo de mostrar un comparable mal ubicado.
+function bearingEntrePuntos(lat1, lon1, lat2, lon2) {
+  const toRad = d => d * Math.PI / 180;
+  const y = Math.sin(toRad(lon2 - lon1)) * Math.cos(toRad(lat2));
+  const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lon2 - lon1));
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+// Diferencia angular tratando una calle como una línea sin sentido (0°==180°),
+// para que no importe en qué dirección Overpass haya ordenado los nodos.
+function diferenciaAngularMod180(a, b) {
+  const d = Math.abs(a - b) % 180;
+  return d > 90 ? 180 - d : d;
+}
+async function getStreetsClassified(lat, lon, radius, calleNombre) {
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 6000);
+    // "out geom" (no solo "out tags") — necesitamos las coordenadas de cada
+    // tramo de calle para poder calcular su rumbo/orientación real.
+    const query = `[out:json][timeout:5];way(around:${radius},${lat},${lon})["highway"]["name"];out geom;`;
+    const res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST", signal: ctrl.signal,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`
+    });
+    const data = await res.json();
+    const p = { residential: 1, secondary: 2, tertiary: 3, primary: 4, unclassified: 5 };
+    const porNombre = new Map(); // nombre -> { prioridad, bearing }
+    for (const el of data.elements || []) {
+      const name = el.tags?.name;
+      const geom = el.geometry;
+      if (!name || !Array.isArray(geom) || geom.length < 2) continue;
+      const a = geom[0], b = geom[geom.length - 1];
+      if (a == null || b == null || a.lat == null || b.lat == null) continue;
+      const bearing = bearingEntrePuntos(a.lat, a.lon, b.lat, b.lon);
+      if (!porNombre.has(name)) porNombre.set(name, { prioridad: p[el.tags.highway] || 9, bearing });
+    }
+    const nombreCalleNorm = (calleNombre || "").toLowerCase().trim();
+    let bearingPropio = null;
+    if (nombreCalleNorm) {
+      for (const [name, info] of porNombre) {
+        if (name.toLowerCase().includes(nombreCalleNorm) || nombreCalleNorm.includes(name.toLowerCase())) {
+          bearingPropio = info.bearing;
+          break;
+        }
+      }
+    }
+    const ordenadas = [...porNombre.entries()].sort((a, b) => a[1].prioridad - b[1].prioridad);
+    const flat = ordenadas.slice(0, 6).map(([name]) => name);
+    const paralelas = [];
+    const perpendiculares = [];
+    if (bearingPropio != null) {
+      for (const [name, info] of ordenadas) {
+        if (name.toLowerCase().includes(nombreCalleNorm) || nombreCalleNorm.includes(name.toLowerCase())) continue;
+        const diff = diferenciaAngularMod180(info.bearing, bearingPropio);
+        if (diff <= 25 && paralelas.length < 3) paralelas.push(name);
+        else if (diff >= 65 && perpendiculares.length < 3) perpendiculares.push(name);
+      }
+    }
+    return { flat, paralelas, perpendiculares };
+  } catch (e) {
+    console.warn("getStreetsClassified falló:", e.message);
+    return { flat: [], paralelas: [], perpendiculares: [] };
+  }
+}
+
 // BLOQUE 18c: helper de POST que sigue redirects preservando método y body.
 // El log de Vercel del 13/07 18:55 mostró "Tokko: respuesta no-JSON (status
 // 405): GET" — es decir, nuestro POST llegó como GET al destino final. Esto
@@ -421,7 +498,7 @@ export default async function handler(req, res) {
   // búsqueda en paralelo que dispara el cliente) con el mismo resultado.
   // Ahora corren UNA sola vez acá, y el cliente reusa esto para las 3.
   if (req.body?._enrichOnly) {
-    const { address, tipo, operacion, barrio, supTotal, conCochera, esCerrado, loteCentrico } = req.body._meta || {};
+    const { address, tipo, operacion, barrio, supTotal, conCochera, esCerrado, loteCentrico, calle, numero } = req.body._meta || {};
 
     // BLOQUE 16: antes esto corría en paralelo (Promise.all), así que Tokko
     // nunca tenía las coordenadas de la propiedad tasada disponibles para
@@ -435,11 +512,20 @@ export default async function handler(req, res) {
 
     let streetContext = "";
     let streetsNearby = [];
+    let streetsParalelas = [];
+    let streetsPerpendiculares = [];
     if (coords) {
-      let streets = await getNearbyStreets(coords.lat, coords.lon, 500);
-      if (streets.length < 3) streets = await getNearbyStreets(coords.lat, coords.lon, 1000);
-      streetsNearby = streets;
-      if (streets.length) streetContext = `CALLES CERCANAS (500m): ${streets.join(", ")}. `;
+      // BLOQUE 25: no barrio cerrado (ahí las calles geolocalizadas no se
+      // usan, el filtro es por nombre de barrio) — solo clasificamos
+      // paralelas/perpendiculares cuando esCerrado es falso, ya que ahí es
+      // donde streetsNearby/paralelas/perpendiculares realmente se usan para
+      // armar queries.
+      let clasif = await getStreetsClassified(coords.lat, coords.lon, 500, calle);
+      if (clasif.flat.length < 3) clasif = await getStreetsClassified(coords.lat, coords.lon, 1000, calle);
+      streetsNearby = clasif.flat;
+      streetsParalelas = clasif.paralelas;
+      streetsPerpendiculares = clasif.perpendiculares;
+      if (streetsNearby.length) streetContext = `CALLES CERCANAS (500m): ${streetsNearby.join(", ")}. `;
 
       // Para lotes: chequear estación de tren cercana (detección automática de zona céntrica).
       // Refuerza la marca del usuario, o la aporta si el usuario no marcó "céntrico".
@@ -469,7 +555,7 @@ export default async function handler(req, res) {
 
     // BLOQUE 11: log server-side para poder ver en Vercel -> Logs si el
     // geocode esta funcionando o no en producción, sin depender de devtools.
-    console.log(`[_enrichOnly] address="${address}" geocodeOk=${!!coords} preciso=${coords?.preciso ?? "-"} locationType=${coords?.locationType || "-"} streetsNearby=${streetsNearby.length} barrioDetectado=${coords?.barrioDetectado || "-"}`);
+    console.log(`[_enrichOnly] address="${address}" geocodeOk=${!!coords} preciso=${coords?.preciso ?? "-"} locationType=${coords?.locationType || "-"} streetsNearby=${streetsNearby.length} paralelas=${JSON.stringify(streetsParalelas)} perpendiculares=${JSON.stringify(streetsPerpendiculares)} barrioDetectado=${coords?.barrioDetectado || "-"}`);
 
     // streetsNearby viaja crudo (array) ademas del texto ya formateado, para que
     // el cliente pueda usar los nombres reales de calles geolocalizadas al armar
@@ -477,10 +563,14 @@ export default async function handler(req, res) {
     // BLOQUE 12: barrioDetectado sale de Google (address_components) — el
     // barrio/subzona REAL de la direccion, sin depender de lo que haya
     // tipeado el usuario en el formulario.
+    // BLOQUE 25: streetsParalelas/streetsPerpendiculares viajan aparte para
+    // que el cliente arme queries de busqueda dirigidas por calle (con la
+    // misma numeracion en paralelas, como referencia de cruce en
+    // perpendiculares) en vez de depender solo del nombre del barrio.
     return res.status(200).json({
-      streetContext, streetsNearby, tokkoContext, tokkoComps, coords: coords || null,
+      streetContext, streetsNearby, streetsParalelas, streetsPerpendiculares, tokkoContext, tokkoComps, coords: coords || null,
       barrioDetectado: coords?.barrioDetectado || null,
-      _debug: { geocodeOk: !!coords, preciso: coords?.preciso ?? null, locationType: coords?.locationType || null, streetsFound: streetsNearby.length },
+      _debug: { geocodeOk: !!coords, preciso: coords?.preciso ?? null, locationType: coords?.locationType || null, streetsFound: streetsNearby.length, paralelas: streetsParalelas.length, perpendiculares: streetsPerpendiculares.length },
     });
   }
 
