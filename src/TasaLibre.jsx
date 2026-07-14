@@ -1333,7 +1333,7 @@ export default function TasaLibre() {
       // donde el sistema efectivamente ubicó la propiedad, no de una subzona
       // que el usuario pudo tipear de forma imprecisa. NO aplica a barrio
       // cerrado: ahí el filtro sigue siendo 100% por nombre del barrio/sector.
-      const buildQueries = (streetsNearby) => {
+      const buildQueries = (streetsNearby, streetsParalelas, streetsPerpendiculares) => {
         const op = operacion === "alquiler" ? "alquiler" : "venta";
         const moneda = operacion === "alquiler" ? "pesos mensuales" : "dolares";
         const monedaShort = operacion === "alquiler" ? "pesos" : "dolares";
@@ -1345,6 +1345,34 @@ export default function TasaLibre() {
         const sectorRef = sectorBarrio ? " " + sectorBarrio : "";
         const nombreCompleto = nombreBarrio + sectorRef;
 
+        // BLOQUE 25: si Overpass pudo clasificar calles vecinas por geometría
+        // real (paralelas vs perpendiculares a la calle propia — ver
+        // getStreetsClassified en tasar.js), se arman 2 queries más
+        // específicas que reemplazan 2 de las 5 genéricas: una busca la
+        // MISMA numeración en calles paralelas (en grillas regulares sin
+        // diagonales la numeración suele mantenerse — no aplica bien en
+        // ciudades con diagonales tipo La Plata, pero como todo candidato
+        // igual se verifica después por distancia real geocodificada
+        // (BLOQUE 12/23/24), una estimación de numeración errónea
+        // simplemente no encuentra nada útil ahí, no genera un comparable
+        // mal ubicado), y otra usa las perpendiculares como referencia de
+        // cruce/esquina (sin asumir numeración, porque el eje de numeración
+        // de una perpendicular es independiente). No aplica a barrio
+        // cerrado (ahí el filtro es 100% por nombre de barrio).
+        const paralelaQuery = (!esCerrado && streetsParalelas && streetsParalelas.length && numero)
+          ? streetsParalelas.slice(0, 2).map(p => `"${p} ${numero}"`).join(" o ")
+          : "";
+        const perpendicularQuery = (!esCerrado && streetsPerpendiculares && streetsPerpendiculares.length)
+          ? "cerca de la esquina con " + streetsPerpendiculares.slice(0, 2).join(" o ")
+          : "";
+        const aplicarQueriesDeCalles = (arr) => {
+          if (esCerrado || arr.length !== 5) return arr;
+          const out = arr.slice();
+          if (paralelaQuery) out[2] = tipo + " " + op + " " + paralelaQuery + " " + barrio + " " + provincia + " precio " + monedaShort;
+          if (perpendicularQuery) out[4] = tipo + " " + op + " " + geoRef + barrio + " " + provincia + " " + perpendicularQuery + " precio " + monedaShort;
+          return out;
+        };
+
         if (tipo === "lote" && loteSubtipo === "cerrado") {
           return [
             `lote terreno ${op} "${nombreCompleto}" site:inmuebles.mercadolibre.com.ar`,
@@ -1354,21 +1382,21 @@ export default function TasaLibre() {
         }
         if (tipo === "lote" && loteSubtipo === "urbano") {
           if (loteEntorno === "centrico") {
-            return [
+            return aplicarQueriesDeCalles([
               "lote apto edificio " + geoRef + barrio + " " + provincia + " " + op + " precio " + monedaShort,
               "terreno apto desarrollo emprendimiento " + geoRef + barrio + " centro " + provincia + " " + monedaShort,
               "lote " + op + " " + calleRef + geoRef + barrio + " zonificacion FOT " + monedaShort + " mercadolibre inmuebles",
               "lote " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
               "terreno " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
-            ];
+            ]);
           }
-          return [
+          return aplicarQueriesDeCalles([
             "lote " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
             "terreno " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + "precio " + monedaShort + " argenprop",
             "lote urbano " + geoRef + barrio + " " + provincia + " " + op + " " + monedaShort + " mercadolibre inmuebles",
             "lote " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
             "terreno " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
-          ];
+          ]);
         }
         if (tipo === "departamento" && deptoSubtipo === "cerrado") {
           const cocheraFilter = (amenities.includes("Cochera") || amenities.includes("Cochera doble")) ? "con cochera " : "";
@@ -1390,13 +1418,13 @@ export default function TasaLibre() {
           // mencionaba). Más diversidad de queries > más reintentos en la
           // misma query — y con max_uses:1 por llamada, el costo total no
           // sube (5 busquedas simples en vez de hasta 6 con reintentos).
-          return [
+          return aplicarQueriesDeCalles([
             "departamento " + op + " " + calleRef + geoRef + barrio + " " + provincia + " " + dormRef + cocheraFilter + "precio " + monedaShort + " zonaprop",
             "departamento " + op + " " + geoRef + barrio + " " + provincia + " " + ambientes + " ambientes " + cocheraFilter + monedaShort + " argenprop",
             "depto " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + dormRef + cocheraFilter + monedaShort,
             "departamento " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
             "departamento " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
-          ];
+          ]);
         }
         if (tipo === "casa" && casaSubtipo === "cerrado") {
           return [
@@ -1406,13 +1434,13 @@ export default function TasaLibre() {
           ];
         }
         if (tipo === "casa") {
-          return [
+          return aplicarQueriesDeCalles([
             "casa " + op + " " + calleRef + geoRef + barrio + " " + provincia + " " + dormRef + "precio " + monedaShort + " zonaprop",
             "casa " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + monedaShort + " argenprop",
             "casa " + geoRef + barrio + " " + provincia + " " + dormRef + supRef + op + " " + monedaShort,
             "casa " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
             "casa " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
-          ];
+          ]);
         }
         if (tipo === "ph" && deptoSubtipo === "cerrado") {
           return [
@@ -1422,30 +1450,30 @@ export default function TasaLibre() {
           ];
         }
         if (tipo === "ph") {
-          return [
+          return aplicarQueriesDeCalles([
             "PH " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
             "PH " + op + " " + geoRef + barrio + " " + provincia + " " + ambientes + " ambientes " + monedaShort + " argenprop",
             "ph " + geoRef + barrio + " " + provincia + " " + op + " " + monedaShort,
             "PH " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
             "PH " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
-          ];
+          ]);
         }
         if (tipo === "local") {
-          return [
+          return aplicarQueriesDeCalles([
             "local comercial " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
             "local " + op + " " + geoRef + barrio + " " + provincia + " " + supRef + monedaShort + " argenprop",
             "local comercial " + geoRef + barrio + " " + provincia + " " + op + " " + monedaShort + " mercadolibre",
             "local comercial " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
             "local comercial " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
-          ];
+          ]);
         }
-        return [
+        return aplicarQueriesDeCalles([
           tipo + " " + op + " " + calleRef + geoRef + barrio + " " + provincia + " precio " + monedaShort + " zonaprop",
           tipo + " " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " argenprop",
           tipo + " " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " mercadolibre inmuebles",
           tipo + " " + op + " " + calleRef + geoRef + barrio + " " + provincia + " inmobiliaria " + monedaShort,
           tipo + " " + op + " " + geoRef + barrio + " " + provincia + " " + monedaShort + " properati",
-        ];
+        ]);
       };
 
       let comparablesData = "";
@@ -1472,6 +1500,8 @@ export default function TasaLibre() {
       let tokkoContext = "";
       let tokkoComps = [];
       let streetsNearby = [];
+      let streetsParalelas = [];
+      let streetsPerpendiculares = [];
       let coordsPropiedad = null;
       let barrioDetectado = "";
       try {
@@ -1486,6 +1516,10 @@ export default function TasaLibre() {
               barrio: esCerradoSearch ? nombreBarrioCerradoEnrich : barrio,
               esCerrado: esCerradoSearch, loteCentrico: esLoteCentricoEnrich,
               supTotal, conCochera: amenities.includes("Cochera"),
+              // BLOQUE 25: calle/numero propios, para que el servidor pueda
+              // identificar el rumbo real de la calle propia (Overpass) y
+              // clasificar las calles vecinas en paralelas/perpendiculares.
+              calle: esCerradoSearch ? "" : calle, numero: esCerradoSearch ? "" : numero,
             },
           }),
         });
@@ -1494,6 +1528,8 @@ export default function TasaLibre() {
         tokkoContext = enrichData.tokkoContext || "";
         tokkoComps = enrichData.tokkoComps || [];
         streetsNearby = enrichData.streetsNearby || [];
+        streetsParalelas = enrichData.streetsParalelas || [];
+        streetsPerpendiculares = enrichData.streetsPerpendiculares || [];
         // BLOQUE 12: coordsPropiedad (Google, con Nominatim de respaldo) es lo
         // que permite verificar distancia REAL de cada comparable más abajo.
         // barrioDetectado sale de Google a partir de la dirección — no hace
@@ -1508,7 +1544,7 @@ export default function TasaLibre() {
       // libre de "barrio". En barrio cerrado, streetsNearby siempre llega
       // vacío (no se geocodifica ahí), así que buildQueries no cambia su
       // comportamiento para esos casos.
-      const queries = buildQueries(streetsNearby);
+      const queries = buildQueries(streetsNearby, streetsParalelas, streetsPerpendiculares);
 
       setLoadStep(2);
       const precioLabel = operacion === "alquiler" ? "precio alquiler mensual (en dolares o pesos)" : "precio venta en dolares";
