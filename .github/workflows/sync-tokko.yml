@@ -1,0 +1,46 @@
+# BLOQUE 28: sincronización mensual de la red Tokko a Supabase.
+#
+# Este archivo va en el repo en: .github/workflows/sync-tokko.yml
+#
+# Requiere configurar estos 3 secrets en GitHub (Settings → Secrets and
+# variables → Actions → New repository secret), con los mismos valores que
+# ya están cargados en Vercel:
+#   TOKKO_API_KEY
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY   (la service role key, no la anon/public key)
+#
+# También requiere que sync-tokko-network.js y su package.json (con
+# @supabase/supabase-js como dependencia) estén en el repo, por ejemplo en
+# una carpeta scripts/.
+#
+# Se puede disparar manualmente desde la pestaña "Actions" del repo
+# (workflow_dispatch) para probar sin esperar al día 1 del mes.
+
+name: Sync red Tokko a Supabase
+
+on:
+  schedule:
+    # Día 1 de cada mes, 6:00 UTC (3:00 AM Argentina).
+    - cron: "0 6 1 * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar dependencias
+        run: npm install @supabase/supabase-js
+
+      - name: Correr sincronización
+        env:
+          TOKKO_API_KEY: ${{ secrets.TOKKO_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/sync-tokko-network.js
