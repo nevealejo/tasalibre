@@ -256,6 +256,57 @@ async function getStreetsClassified(lat, lon, radius, calleNombre) {
   }
 }
 
+// BLOQUE 26: fetch + parse de la página REAL de cada publicación encontrada
+// por la búsqueda web, en vez de confiar en el resumen de texto que arma la
+// IA. Confirmado en vivo (13/07-14/07): la MISMA publicación real (Belgrano
+// 447, Quilmes) dio dos superficies distintas en dos corridas (403m² una
+// vez, 172m² la otra) — la IA parafrasea el resultado de búsqueda, no lo
+// transcribe con precisión, así que cualquier número que dependa 100% de ese
+// resumen no es confiable. Acá se abre la URL real de la publicación y se
+// extrae precio/m²/dirección directo del HTML — el mismo enfoque que ya
+// usamos manualmente para verificar Belgrano 447/Cevallos 471/Falucho.
+function stripHtmlATexto(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&aacute;/gi, "á").replace(/&eacute;/gi, "é").replace(/&iacute;/gi, "í")
+    .replace(/&oacute;/gi, "ó").replace(/&uacute;/gi, "ú").replace(/&ntilde;/gi, "ñ")
+    .replace(/&Aacute;/g, "Á").replace(/&Eacute;/g, "É").replace(/&Iacute;/g, "Í")
+    .replace(/&Oacute;/g, "Ó").replace(/&Uacute;/g, "Ú").replace(/&Ntilde;/g, "Ñ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+// Extrae dirección (del <title>, que en los portales que vimos sigue el
+// patrón "Casa en Venta en [Ciudad] - [Dirección]"), precio (USD/ARS) y
+// m² (priorizando "total construido"/"superficie cubierta" sobre cualquier
+// otro m² suelto, para no confundir con el terreno) de un HTML crudo.
+function extraerAddrPrecioM2DeHtml(html) {
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  let direccion = null;
+  if (titleMatch) {
+    const partes = titleMatch[1].split(" - ").map(s => s.trim()).filter(Boolean);
+    if (partes.length > 1) direccion = partes[partes.length - 1];
+  }
+  const texto = stripHtmlATexto(html);
+  const mUsd = texto.match(/USD\s*\$?\s*([\d][\d.,]{2,})/i)
+    || texto.match(/US\$\s*([\d][\d.,]{2,})/i)
+    || texto.match(/U\$S\s*([\d][\d.,]{2,})/i);
+  const mArs = !mUsd && texto.match(/(?:ARS|AR\$)\s*([\d][\d.,]{2,})/i);
+  if (!mUsd && !mArs) return null;
+  const moneda = mUsd ? "usd" : "ars";
+  const precioRaw = parseInt((mUsd ? mUsd[1] : mArs[1]).replace(/[^\d]/g, ""), 10);
+  const mM2Etiquetado = texto.match(/(?:total construido|superficie cubierta|cubierta)\s*:?\s*(\d+(?:[.,]\d+)?)\s*m[2²]/i);
+  const mM2Cualquiera = texto.match(/(\d+(?:[.,]\d+)?)\s*m[2²]/i);
+  const mM2 = mM2Etiquetado || mM2Cualquiera;
+  if (!mM2) return null;
+  const m2 = parseFloat(mM2[1].replace(",", "."));
+  if (!direccion || !Number.isFinite(precioRaw) || !(m2 > 10 && m2 < 2000)) return null;
+  return { direccion, precioRaw, moneda, m2 };
+}
+
 // BLOQUE 18c: helper de POST que sigue redirects preservando método y body.
 // El log de Vercel del 13/07 18:55 mostró "Tokko: respuesta no-JSON (status
 // 405): GET" — es decir, nuestro POST llegó como GET al destino final. Esto
@@ -603,6 +654,45 @@ export default async function handler(req, res) {
     }));
     console.log(`[_geocodeBatch] ${lista.length} direcciones, ${resultados.filter(r=>r.distanciaKm!=null).length} geocodificadas OK y precisas`);
     return res.status(200).json({ resultados });
+  }
+
+  // BLOQUE 26: abre las URLs REALES que devolvió la búsqueda web y extrae
+  // precio/m²/dirección directo del HTML de cada publicación — no del
+  // resumen que arma la IA. Confirmado en vivo que ese resumen no es
+  // confiable (la misma publicación real dio dos superficies distintas en
+  // dos corridas). Cada resultado se geocodifica y se verifica por distancia
+  // real antes de aceptarlo, con el mismo radio amplio (2.5km) que el resto
+  // del pipeline (BLOQUE 12/23) — así una publicación que resulte estar
+  // lejos simplemente se descarta, no se muestra como "cerca" sin serlo.
+  if (req.body?._fetchListings) {
+    const { urls, origenLat, origenLon, contexto } = req.body._meta || {};
+    const lista = (Array.isArray(urls) ? urls : []).slice(0, 8); // tope defensivo de costo/latencia
+    const resultados = await Promise.all(lista.map(async (url) => {
+      if (!url || typeof url !== "string") return null;
+      try {
+        const ctrl = new AbortController();
+        setTimeout(() => ctrl.abort(), 6000);
+        const pageRes = await fetch(url, {
+          signal: ctrl.signal,
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; TasaLibreBot/1.0; +https://www.tasalibre.com)" },
+        });
+        if (!pageRes.ok) return null;
+        const html = await pageRes.text();
+        const extraido = extraerAddrPrecioM2DeHtml(html);
+        if (!extraido) return null;
+        const consulta = contexto ? `${extraido.direccion}, ${contexto}` : extraido.direccion;
+        const g = await geocodeAddressConFallback(consulta);
+        if (!g || origenLat == null || origenLon == null || !g.preciso) return null;
+        const dist = distanciaKm(origenLat, origenLon, g.lat, g.lon);
+        if (dist > 2.5) return null;
+        return { ...extraido, distanciaKm: Math.round(dist * 100) / 100, url };
+      } catch (e) {
+        return null;
+      }
+    }));
+    const validos = resultados.filter(Boolean);
+    console.log(`[_fetchListings] ${lista.length} URLs, ${validos.length} verificadas (precio+m2+direccion+distancia real): ${JSON.stringify(validos.map(v=>({direccion:v.direccion, distanciaKm:v.distanciaKm})))}`);
+    return res.status(200).json({ resultados: validos });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
