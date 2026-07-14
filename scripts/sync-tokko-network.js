@@ -52,6 +52,31 @@ const tipoMapInverso = { 2: "departamento", 3: "casa", 13: "ph", 7: "local", 1: 
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// BLOQUE 28c: mismo helper que ya existe en producción (tasar-actualizado-
+// BLOQUE7-8.js, BLOQUE 18c) — fetch() convierte automáticamente POST a GET
+// al seguir un redirect 301/302/303/307/308 (spec WHATWG), y tokkobroker.com
+// redirige esta URL de búsqueda. Confirmado en vivo acá (correr --test sin
+// esto dio exactamente el mismo error ya documentado en producción:
+// "Respuesta no-JSON (status 405): GET"). Con redirect:"manual"
+// interceptamos el redirect y reintentamos el POST real (con su body)
+// contra la URL final, en vez de dejar que se degrade a GET.
+async function postJsonSiguiendoRedirects(url, body, headers, signal, maxSaltos = 3) {
+  let currentUrl = url;
+  let ultimaRes = null;
+  for (let i = 0; i <= maxSaltos; i++) {
+    const res = await fetch(currentUrl, { method: "POST", redirect: "manual", signal, headers, body: JSON.stringify(body) });
+    ultimaRes = res;
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get("location");
+      if (!location) break;
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+    return res;
+  }
+  return ultimaRes;
+}
+
 // OJO: price/currency/roofed_surface/total_surface/geo_lat/geo_long/
 // address/location/fake_address/publication_title/parking_lot_amount/tags
 // son los campos que YA se usan con éxito en producción (ver
@@ -121,13 +146,9 @@ async function fetchPagina(offset) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 15000);
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-      redirect: "follow",
-    });
+    const res = await postJsonSiguiendoRedirects(
+      url, body, { "Content-Type": "application/json" }, ctrl.signal
+    );
     const rawText = await res.text();
     let data;
     try { data = JSON.parse(rawText); }
