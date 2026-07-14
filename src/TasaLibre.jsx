@@ -1947,6 +1947,7 @@ export default function TasaLibre() {
             });
             const fetchData = await fetchRes.json();
             console.log(`[BLOQUE26] URLs candidatas=${urlsCandidatas.length}, verificadas=${(fetchData.resultados || []).length}`);
+            console.log(`[BLOQUE26_DIAG] ${JSON.stringify(fetchData.diagnostico || [])}`);
             comparablesPaginaReal = (fetchData.resultados || []).map(r => {
               const precioUsd = normalizarAUsd(r.precioRaw, r.moneda, dolarBlue);
               if (!precioUsd || !(r.m2 > 0)) return null;
