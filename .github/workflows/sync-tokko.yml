@@ -22,7 +22,12 @@ on:
   schedule:
     # Día 1 de cada mes, 6:00 UTC (3:00 AM Argentina).
     - cron: "0 6 1 * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      modo_test:
+        description: "Modo prueba (--test): trae 1 sola página, no toca Supabase. Dejar en true la primera vez, para confirmar los campos antes de correr el sync nacional completo."
+        type: boolean
+        default: true
 
 jobs:
   sync:
@@ -43,4 +48,9 @@ jobs:
           TOKKO_API_KEY: ${{ secrets.TOKKO_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/sync-tokko-network.js
+        # BLOQUE 28b: en el disparo manual (workflow_dispatch), el checkbox
+        # "modo_test" controla si se agrega --test. En la corrida programada
+        # (schedule, el cron mensual) github.event.inputs no existe, así que
+        # el "|| false" hace que SIEMPRE corra completo (nunca en modo
+        # prueba) en la ejecución automática del día 1 de cada mes.
+        run: node scripts/sync-tokko-network.js ${{ (github.event.inputs.modo_test || 'false') == 'true' && '--test' || '' }}
