@@ -667,32 +667,47 @@ export default async function handler(req, res) {
   if (req.body?._fetchListings) {
     const { urls, origenLat, origenLon, contexto } = req.body._meta || {};
     const lista = (Array.isArray(urls) ? urls : []).slice(0, 8); // tope defensivo de costo/latencia
-    const resultados = await Promise.all(lista.map(async (url) => {
-      if (!url || typeof url !== "string") return null;
+    // BLOQUE 26b: diagnóstico — antes esta rama devolvía null silencioso ante
+    // cualquier falla (fetch, parseo, geocode o distancia), así que "0
+    // verificadas" no decía POR QUÉ. Ahora cada URL devuelve su motivo de
+    // descarte explícito para poder ver en consola dónde se corta la cadena.
+    const diagnostico = await Promise.all(lista.map(async (url) => {
+      if (!url || typeof url !== "string") return { url, ok: false, motivo: "url_invalida" };
       try {
         const ctrl = new AbortController();
         setTimeout(() => ctrl.abort(), 6000);
-        const pageRes = await fetch(url, {
-          signal: ctrl.signal,
-          headers: { "User-Agent": "Mozilla/5.0 (compatible; TasaLibreBot/1.0; +https://www.tasalibre.com)" },
-        });
-        if (!pageRes.ok) return null;
+        let pageRes;
+        try {
+          pageRes = await fetch(url, {
+            signal: ctrl.signal,
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "Accept-Language": "es-AR,es;q=0.9",
+            },
+          });
+        } catch (fetchErr) {
+          return { url, ok: false, motivo: "fetch_excepcion:" + fetchErr.message };
+        }
+        if (!pageRes.ok) return { url, ok: false, motivo: "fetch_status:" + pageRes.status };
         const html = await pageRes.text();
         const extraido = extraerAddrPrecioM2DeHtml(html);
-        if (!extraido) return null;
+        if (!extraido) return { url, ok: false, motivo: "parseo_fallido", htmlLen: html.length };
         const consulta = contexto ? `${extraido.direccion}, ${contexto}` : extraido.direccion;
         const g = await geocodeAddressConFallback(consulta);
-        if (!g || origenLat == null || origenLon == null || !g.preciso) return null;
+        if (!g) return { url, ok: false, motivo: "geocode_null", direccion: extraido.direccion, consulta };
+        if (origenLat == null || origenLon == null) return { url, ok: false, motivo: "sin_origen", direccion: extraido.direccion };
+        if (!g.preciso) return { url, ok: false, motivo: "geocode_impreciso:" + (g.motivo || "?"), direccion: extraido.direccion, consulta };
         const dist = distanciaKm(origenLat, origenLon, g.lat, g.lon);
-        if (dist > 2.5) return null;
-        return { ...extraido, distanciaKm: Math.round(dist * 100) / 100, url };
+        if (dist > 2.5) return { url, ok: false, motivo: "distancia_excedida:" + dist.toFixed(2) + "km", direccion: extraido.direccion };
+        return { url, ok: true, direccion: extraido.direccion, precioRaw: extraido.precioRaw, moneda: extraido.moneda, m2: extraido.m2, distanciaKm: Math.round(dist * 100) / 100 };
       } catch (e) {
-        return null;
+        return { url, ok: false, motivo: "excepcion:" + e.message };
       }
     }));
-    const validos = resultados.filter(Boolean);
-    console.log(`[_fetchListings] ${lista.length} URLs, ${validos.length} verificadas (precio+m2+direccion+distancia real): ${JSON.stringify(validos.map(v=>({direccion:v.direccion, distanciaKm:v.distanciaKm})))}`);
-    return res.status(200).json({ resultados: validos });
+    const validos = diagnostico.filter(d => d.ok);
+    console.log(`[_fetchListings] ${lista.length} URLs, ${validos.length} verificadas. Diagnóstico completo: ${JSON.stringify(diagnostico)}`);
+    return res.status(200).json({ resultados: validos, diagnostico });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
