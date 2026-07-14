@@ -1579,7 +1579,16 @@ export default function TasaLibre() {
         // sin protección anti-bot, como los que ya confirmamos que sí se
         // pueden leer) por sobre los portales grandes, para que las URLs que
         // terminamos intentando abrir tengan más chance de funcionar.
-        const preferenciaSitiosChicos = " Al buscar, priorizá webs de inmobiliarias/agencias locales (sitios propios de la inmobiliaria, no portales agregadores) por sobre ZonaProp, Argenprop, Mitula o Properati — esos portales grandes muchas veces no se pueden verificar después. Si encontrás la misma propiedad publicada tanto en un portal grande como en la web propia de la inmobiliaria, preferí siempre citar la web propia de la inmobiliaria.";
+        // BLOQUE 26c: confirmado en vivo (14/07) que aunque evitemos ZonaProp,
+        // la IA suele citar páginas de LISTADO/categoría o la home de la
+        // inmobiliaria (ej. "casas-venta-quilmes-centro", "listado.mercado
+        // libre.com.ar/...", o directamente "ernestoaiellopropiedades.com/")
+        // en vez de la publicación individual — esas páginas no tienen UN
+        // precio/m²/dirección puntual, así que nuestro parser (armado para
+        // una publicación individual) no encuentra nada y descarta. Reforzamos
+        // el pedido para que sea explícitamente la URL de la ficha de ESA
+        // propiedad puntual (con su propio precio), no un listado.
+        const preferenciaSitiosChicos = " Al buscar, priorizá webs de inmobiliarias/agencias locales (sitios propios de la inmobiliaria, no portales agregadores) por sobre ZonaProp, Argenprop, Mitula o Properati — esos portales grandes muchas veces no se pueden verificar después. Si encontrás la misma propiedad publicada tanto en un portal grande como en la web propia de la inmobiliaria, preferí siempre citar la web propia de la inmobiliaria. CRÍTICO: citá siempre la URL de la FICHA/PUBLICACIÓN INDIVIDUAL de cada propiedad puntual (la página que muestra el precio y los datos de ESA propiedad en particular, normalmente con un ID o código numérico en la URL) — NUNCA cites una página de listado general, resultados de búsqueda, categoría (ej. \"casas-venta-quilmes\") ni la home de una inmobiliaria, porque esas páginas no permiten identificar el precio de una propiedad puntual.";
         const searchPrompt = tokkoContext + streetContext + bcContext + loteCentricoContext + "Busca propiedades en " + (operacion === "alquiler" ? "ALQUILER" : "VENTA") + " en portales inmobiliarios argentinos: " + q + ". Devuelve SOLO propiedades en " + operacion + ". Lista: " + precioLabel + ", m2, direccion exacta." + dolarContext + preferenciaSitiosChicos + formatoEstricto + " Para el campo fuente usa siempre: Relevamiento de mercado.";
         return fetch("/api/tasar", {
           method: "POST",
@@ -1960,9 +1969,31 @@ export default function TasaLibre() {
               return !DOMINIOS_BLOQUEADOS.some(d => host === d || host.endsWith("." + d));
             } catch { return false; }
           };
+          // BLOQUE 26c: heurística para priorizar fichas de publicación
+          // individual por sobre páginas de listado/categoría/home — en una
+          // corrida real, 4 de 4 URLs no-bloqueadas fallaron el parseo
+          // porque eran listados ("casas-venta-quilmes-centro"), un buscador
+          // interno, o la home de la inmobiliaria, no una publicación
+          // puntual. Las fichas individuales en los portales/CRMs argentinos
+          // (Tokko, MercadoLibre, etc.) casi siempre tienen un ID numérico
+          // largo en el path (ej. "/p/6815824-Casa-en-Venta..."); un path
+          // vacío/raíz (home) o sin ningún número largo es señal de listado
+          // general. No se descarta nada (la IA puede acertar igual), solo
+          // se ordena para que las que SÍ parecen fichas puntuales ocupen los
+          // primeros lugares dentro del tope de 8.
+          const pareceFichaIndividual = (url) => {
+            try {
+              const u = new URL(url);
+              if (!u.pathname || u.pathname === "/") return false; // home
+              return /\d{4,}/.test(u.pathname); // algún ID numérico largo
+            } catch { return false; }
+          };
           const urlsCandidatas = [...new Map(
             searchResults.flatMap(r => r.urls || []).map(u => [u.url, u])
-          ).values()].filter(u => urlEsFetcheable(u.url)).slice(0, 8); // tope defensivo de costo/latencia
+          ).values()]
+            .filter(u => urlEsFetcheable(u.url))
+            .sort((a, b) => (pareceFichaIndividual(b.url) ? 1 : 0) - (pareceFichaIndividual(a.url) ? 1 : 0))
+            .slice(0, 8); // tope defensivo de costo/latencia
           if (urlsCandidatas.length > 0) {
             const fetchRes = await fetch("/api/tasar", {
               method: "POST",
