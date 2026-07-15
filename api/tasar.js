@@ -322,7 +322,7 @@ async function getStreetsClassified(lat, lon, radius, calleNombre) {
     return { flat, paralelas, perpendiculares, perpendicularesPorLado: { ladoA, ladoB } };
   } catch (e) {
     console.warn("getStreetsClassified falló:", e.message);
-    return { flat: [], paralelas: [], perpendiculares: [], perpendicularesPorLado: { ladoA: [], ladoB: [] } };
+    return { flat: [], paralelas: [], perpendiculares: [], perpendicularesPorLado: { ladoA: [], ladoB: [] }, _error: e.message };
   }
 }
 
@@ -1166,6 +1166,7 @@ export default async function handler(req, res) {
       streetsParalelas = clasif.paralelas;
       streetsPerpendiculares = clasif.perpendiculares;
       streetsPerpendicularesPorLado = clasif.perpendicularesPorLado || { ladoA: [], ladoB: [] };
+      var _debugErrorCalles = clasif._error || null;
       if (streetsNearby.length) streetContext = `CALLES CERCANAS (${radioUsado}m): ${streetsNearby.join(", ")}. `;
       if (streetsPerpendicularesPorLado.ladoA.length || streetsPerpendicularesPorLado.ladoB.length) {
         const fmt = arr => arr.map(x => `${x.name} (${x.distM}m)`).join(", ") || "ninguna";
@@ -1215,7 +1216,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       streetContext, streetsNearby, streetsParalelas, streetsPerpendiculares, streetsPerpendicularesPorLado, tokkoContext, tokkoComps, coords: coords || null,
       barrioDetectado: coords?.barrioDetectado || null,
-      _debug: { geocodeOk: !!coords, preciso: coords?.preciso ?? null, locationType: coords?.locationType || null, streetsFound: streetsNearby.length, paralelas: streetsParalelas.length, perpendiculares: streetsPerpendiculares.length, ladoA: streetsPerpendicularesPorLado.ladoA.length, ladoB: streetsPerpendicularesPorLado.ladoB.length },
+      _debug: { geocodeOk: !!coords, preciso: coords?.preciso ?? null, locationType: coords?.locationType || null, streetsFound: streetsNearby.length, paralelas: streetsParalelas.length, perpendiculares: streetsPerpendiculares.length, ladoA: streetsPerpendicularesPorLado.ladoA.length, ladoB: streetsPerpendicularesPorLado.ladoB.length, errorCallesGeo: typeof _debugErrorCalles !== 'undefined' ? _debugErrorCalles : null },
     });
   }
 
