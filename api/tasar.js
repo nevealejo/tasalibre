@@ -340,6 +340,92 @@ async function getStreetsClassified(lat, lon, radius, calleNombre) {
   }
 }
 
+// BLOQUE 31c: se confirmó en vivo (14/07) que Overpass (ambos espejos
+// públicos) rate-limita las IPs compartidas de Vercel — mismo problema que
+// ArgenProp/Tokko. Se reemplaza la fuente de datos para calles
+// perpendiculares por Google (Geocoding API), que en toda la sesión nunca
+// bloqueó nuestras llamadas. Estrategia: 1) geocodificar dos numeraciones
+// cercanas de la MISMA calle para medir su rumbo real (en vez de depender
+// de geometría de Overpass); 2) caminar sobre ese rumbo ±100m/±200m desde
+// la propiedad; 3) en cada punto, hacer reverse geocoding y leer el
+// resultado tipo "intersection" (Google devuelve "Calle A & Calle B" cerca
+// de una esquina) o el "route" más cercano — esa es la calle perpendicular
+// real en ese tramo. ±100m = lado A, ±200m... en direcciones opuestas según
+// el sentido de numeración creciente/decreciente de la calle propia.
+async function reverseGeocodeGoogle(lat, lon) {
+  try {
+    const key = process.env.GOOGLE_MAPS_API_KEY;
+    if (!key) return null;
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 5000);
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${key}&result_type=intersection|route&language=es`;
+    const res = await fetch(url, { signal: ctrl.signal });
+    const data = await res.json();
+    if (data.status !== "OK" || !data.results?.length) return null;
+    return data.results;
+  } catch (e) {
+    console.error("reverseGeocodeGoogle exception:", e.message);
+    return null;
+  }
+}
+
+function extraerCalleCruceDeResultados(results, calleNombreNorm) {
+  if (!results) return null;
+  const inter = results.find(r => (r.types || []).includes("intersection"));
+  if (inter && inter.formatted_address) {
+    const primeraParte = inter.formatted_address.split(",")[0];
+    const partes = primeraParte.split(/\s*(?:&|\by\b|\/)\s*/i).map(s => s.trim()).filter(Boolean);
+    const otra = partes.find(p => p && !p.toLowerCase().includes(calleNombreNorm));
+    if (otra) return otra;
+  }
+  const ruta = results.find(r => (r.types || []).includes("route"));
+  if (ruta) {
+    const comp = (ruta.address_components || []).find(c => (c.types || []).includes("route"));
+    const nombre = comp?.long_name;
+    if (nombre && !nombre.toLowerCase().includes(calleNombreNorm)) return nombre;
+  }
+  return null;
+}
+
+async function getPerpendicularesGoogle(lat, lon, calleNombre, numero, contexto) {
+  const vacio = { ladoA: [], ladoB: [] };
+  try {
+    const key = process.env.GOOGLE_MAPS_API_KEY;
+    if (!key || !calleNombre) return vacio;
+    const numBase = parseInt(numero, 10) || 300;
+    const ctx = contexto || "Buenos Aires, Argentina";
+    const [pA, pB] = await Promise.all([
+      geocodeAddressGoogle(`${calleNombre} ${numBase + 300}, ${ctx}`),
+      geocodeAddressGoogle(`${calleNombre} ${Math.max(numBase - 300, 1)}, ${ctx}`),
+    ]);
+    if (!pA || !pB) return vacio;
+    const bearing = bearingEntrePuntos(pB.lat, pB.lon, pA.lat, pA.lon);
+    const rad = bearing * Math.PI / 180;
+    const ux = Math.sin(rad), uy = Math.cos(rad);
+    const calleNorm = calleNombre.toLowerCase().trim();
+
+    const metrosPorGradoLat = 111320;
+    const puntos = [100, 200].flatMap(d => ([
+      { lado: "ladoA", distM: d, lat: lat + (uy * d / metrosPorGradoLat), lon: lon + (ux * d / (metrosPorGradoLat * Math.cos(lat * Math.PI / 180))) },
+      { lado: "ladoB", distM: d, lat: lat - (uy * d / metrosPorGradoLat), lon: lon - (ux * d / (metrosPorGradoLat * Math.cos(lat * Math.PI / 180))) },
+    ]));
+
+    const resultados = await Promise.all(puntos.map(async p => {
+      const results = await reverseGeocodeGoogle(p.lat, p.lon);
+      const nombre = extraerCalleCruceDeResultados(results, calleNorm);
+      return { ...p, nombre };
+    }));
+
+    const ladoA = resultados.filter(r => r.lado === "ladoA" && r.nombre).map(r => ({ name: r.nombre, distM: r.distM }));
+    const ladoB = resultados.filter(r => r.lado === "ladoB" && r.nombre).map(r => ({ name: r.nombre, distM: r.distM }));
+    const dedupe = arr => { const seen = new Set(); return arr.filter(x => seen.has(x.name) ? false : (seen.add(x.name), true)); };
+    return { ladoA: dedupe(ladoA).slice(0, 2), ladoB: dedupe(ladoB).slice(0, 2) };
+  } catch (e) {
+    console.warn("getPerpendicularesGoogle falló:", e.message);
+    return vacio;
+  }
+}
+
 // BLOQUE 26: fetch + parse de la página REAL de cada publicación encontrada
 // por la búsqueda web, en vez de confiar en el resumen de texto que arma la
 // IA. Confirmado en vivo (13/07-14/07): la MISMA publicación real (Belgrano
@@ -1181,6 +1267,17 @@ export default async function handler(req, res) {
       streetsPerpendiculares = clasif.perpendiculares;
       streetsPerpendicularesPorLado = clasif.perpendicularesPorLado || { ladoA: [], ladoB: [] };
       var _debugErrorCalles = clasif._error || null;
+      var _debugFuentePerp = "overpass";
+      // BLOQUE 31c: Overpass (fuente gratuita) viene rate-limitando las IPs
+      // compartidas de Vercel de forma consistente (confirmado en vivo,
+      // mismo patrón que ArgenProp/Tokko). Si no trajo nada, se usa Google
+      // (Geocoding API, nunca bloqueado en esta app) como fuente real de
+      // calles perpendiculares — ver getPerpendicularesGoogle arriba.
+      if (!streetsPerpendicularesPorLado.ladoA.length && !streetsPerpendicularesPorLado.ladoB.length && calle) {
+        const contextoCalle = barrio ? `${barrio}, Buenos Aires, Argentina` : "Buenos Aires, Argentina";
+        streetsPerpendicularesPorLado = await getPerpendicularesGoogle(coords.lat, coords.lon, calle, numero, contextoCalle);
+        if (streetsPerpendicularesPorLado.ladoA.length || streetsPerpendicularesPorLado.ladoB.length) _debugFuentePerp = "google";
+      }
       if (streetsNearby.length) streetContext = `CALLES CERCANAS (${radioUsado}m): ${streetsNearby.join(", ")}. `;
       if (streetsPerpendicularesPorLado.ladoA.length || streetsPerpendicularesPorLado.ladoB.length) {
         const fmt = arr => arr.map(x => `${x.name} (${x.distM}m)`).join(", ") || "ninguna";
@@ -1230,7 +1327,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       streetContext, streetsNearby, streetsParalelas, streetsPerpendiculares, streetsPerpendicularesPorLado, tokkoContext, tokkoComps, coords: coords || null,
       barrioDetectado: coords?.barrioDetectado || null,
-      _debug: { geocodeOk: !!coords, preciso: coords?.preciso ?? null, locationType: coords?.locationType || null, streetsFound: streetsNearby.length, paralelas: streetsParalelas.length, perpendiculares: streetsPerpendiculares.length, ladoA: streetsPerpendicularesPorLado.ladoA.length, ladoB: streetsPerpendicularesPorLado.ladoB.length, errorCallesGeo: typeof _debugErrorCalles !== 'undefined' ? _debugErrorCalles : null },
+      _debug: { geocodeOk: !!coords, preciso: coords?.preciso ?? null, locationType: coords?.locationType || null, streetsFound: streetsNearby.length, paralelas: streetsParalelas.length, perpendiculares: streetsPerpendiculares.length, ladoA: streetsPerpendicularesPorLado.ladoA.length, ladoB: streetsPerpendicularesPorLado.ladoB.length, errorCallesGeo: typeof _debugErrorCalles !== 'undefined' ? _debugErrorCalles : null, fuentePerp: typeof _debugFuentePerp !== 'undefined' ? _debugFuentePerp : null },
     });
   }
 
