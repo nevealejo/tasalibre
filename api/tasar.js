@@ -449,16 +449,45 @@ function stripHtmlATexto(html) {
     .replace(/\s+/g, " ")
     .trim();
 }
-// Extrae dirección (del <title>, que en los portales que vimos sigue el
-// patrón "Casa en Venta en [Ciudad] - [Dirección]"), precio (USD/ARS) y
-// m² (priorizando "total construido"/"superficie cubierta" sobre cualquier
-// otro m² suelto, para no confundir con el terreno) de un HTML crudo.
+// BLOQUE 32: se confirmó (14-15/07) que esta función fallaba sistemáticamente
+// en TERRENOS de sitios Tokko Broker (novoainmobiliaria, robertoabraham,
+// nestorrojo — agencias reales que usan esta plataforma, con URLs
+// /p/{id}-{slug} y estructura idéntica) por dos motivos:
+//  1) Un terreno no tiene "cubierta"/"construido" (no hay edificio), así que
+//     el m² caía al fallback genérico "primer m² suelto en toda la página",
+//     poco confiable.
+//  2) El <title> de estos sitios pega texto de marketing después de la
+//     dirección real, ej. "Arenales 66, Avellaneda ¡EXCELENTE TERRENO DE
+//     520m2 EN INMEJORABLE UBICACION!" — esa "dirección" sucia se mandaba
+//     entera al geocoder, que la resolvía mal, y la publicación se
+//     descartaba (geocode_impreciso/distancia_excedida) aunque el terreno
+//     real estuviera a metros de la propiedad tasada.
+// Fix: (a) cortar el título en el primer "¡"/"!" o tramo en MAYÚSCULAS
+// SOSTENIDAS antes de geocodificar; (b) agregar etiquetas de m² propias de
+// terrenos (terreno/lote/superficie total) como segunda prioridad; (c)
+// extraer coordenadas EXACTAS si están embebidas (iframe de Google Maps
+// "?q=lat,lon" o JSON con latitude/longitude — confirmado en varios sitios
+// Tokko) para calcular distancia real sin geocodificar.
 function extraerAddrPrecioM2DeHtml(html) {
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   let direccion = null;
   if (titleMatch) {
     const partes = titleMatch[1].split(" - ").map(s => s.trim()).filter(Boolean);
     if (partes.length > 1) direccion = partes[partes.length - 1];
+    if (direccion) {
+      const corte = direccion.search(/[¡!]|[A-ZÁÉÍÓÚÑ]{4,}\s+[A-ZÁÉÍÓÚÑ]{3,}/);
+      if (corte > 0) direccion = direccion.slice(0, corte).trim().replace(/[,\s]+$/, "");
+    }
+  }
+  let coordsExactas = null;
+  const mCoords = html.match(/[?&]q=(-?\d{1,3}\.\d{4,}),\s*(-?\d{1,3}\.\d{4,})/)
+    || html.match(/maps\?[^"']*?ll=(-?\d{1,3}\.\d{4,}),(-?\d{1,3}\.\d{4,})/)
+    || html.match(/"latitude"\s*:\s*"?(-?\d{1,3}\.\d{4,})"?\s*,\s*"longitude"\s*:\s*"?(-?\d{1,3}\.\d{4,})"?/i);
+  if (mCoords) {
+    const lat = parseFloat(mCoords[1]), lon = parseFloat(mCoords[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+      coordsExactas = { lat, lon };
+    }
   }
   const texto = stripHtmlATexto(html);
   const mUsd = texto.match(/USD\s*\$?\s*([\d][\d.,]{2,})/i)
@@ -469,12 +498,13 @@ function extraerAddrPrecioM2DeHtml(html) {
   const moneda = mUsd ? "usd" : "ars";
   const precioRaw = parseInt((mUsd ? mUsd[1] : mArs[1]).replace(/[^\d]/g, ""), 10);
   const mM2Etiquetado = texto.match(/(?:total construido|superficie cubierta|cubierta)\s*:?\s*(\d+(?:[.,]\d+)?)\s*m[2²]/i);
+  const mM2Terreno = texto.match(/(?:superficie de terreno|superficie del terreno|sup\.?\s*total|superficie total|total del terreno|terreno|lote)\s*:?\s*(\d+(?:[.,]\d+)?)\s*m[2²]/i);
   const mM2Cualquiera = texto.match(/(\d+(?:[.,]\d+)?)\s*m[2²]/i);
-  const mM2 = mM2Etiquetado || mM2Cualquiera;
+  const mM2 = mM2Etiquetado || mM2Terreno || mM2Cualquiera;
   if (!mM2) return null;
   const m2 = parseFloat(mM2[1].replace(",", "."));
-  if (!direccion || !Number.isFinite(precioRaw) || !(m2 > 10 && m2 < 2000)) return null;
-  return { direccion, precioRaw, moneda, m2 };
+  if (!direccion || !Number.isFinite(precioRaw) || !(m2 > 10 && m2 < 3000)) return null;
+  return { direccion, precioRaw, moneda, m2, coordsExactas };
 }
 
 // BLOQUE 18c: helper de POST que sigue redirects preservando método y body.
@@ -1399,14 +1429,24 @@ export default async function handler(req, res) {
         const html = await pageRes.text();
         const extraido = extraerAddrPrecioM2DeHtml(html);
         if (!extraido) return { url, ok: false, motivo: "parseo_fallido", htmlLen: html.length };
-        const consulta = contexto ? `${extraido.direccion}, ${contexto}` : extraido.direccion;
-        const g = await geocodeAddressConFallback(consulta);
-        if (!g) return { url, ok: false, motivo: "geocode_null", direccion: extraido.direccion, consulta };
         if (origenLat == null || origenLon == null) return { url, ok: false, motivo: "sin_origen", direccion: extraido.direccion };
-        if (!g.preciso) return { url, ok: false, motivo: "geocode_impreciso:" + (g.motivo || "?"), direccion: extraido.direccion, consulta };
+        // BLOQUE 32: si el HTML traía coordenadas exactas embebidas (iframe de
+        // Google Maps o JSON lat/lon — común en sitios Tokko), se usan
+        // directamente y se saltea el geocoder por completo: más confiable
+        // que geocodificar una dirección de texto libre, que en varios casos
+        // reales (terrenos) venía con basura de marketing pegada.
+        let g, consulta;
+        if (extraido.coordsExactas) {
+          g = { lat: extraido.coordsExactas.lat, lon: extraido.coordsExactas.lon, preciso: true };
+        } else {
+          consulta = contexto ? `${extraido.direccion}, ${contexto}` : extraido.direccion;
+          g = await geocodeAddressConFallback(consulta);
+          if (!g) return { url, ok: false, motivo: "geocode_null", direccion: extraido.direccion, consulta };
+          if (!g.preciso) return { url, ok: false, motivo: "geocode_impreciso:" + (g.motivo || "?"), direccion: extraido.direccion, consulta };
+        }
         const dist = distanciaKm(origenLat, origenLon, g.lat, g.lon);
         if (dist > 2.5) return { url, ok: false, motivo: "distancia_excedida:" + dist.toFixed(2) + "km", direccion: extraido.direccion };
-        return { url, ok: true, direccion: extraido.direccion, precioRaw: extraido.precioRaw, moneda: extraido.moneda, m2: extraido.m2, distanciaKm: Math.round(dist * 100) / 100 };
+        return { url, ok: true, direccion: extraido.direccion, precioRaw: extraido.precioRaw, moneda: extraido.moneda, m2: extraido.m2, distanciaKm: Math.round(dist * 100) / 100, fuenteDist: extraido.coordsExactas ? "coords_exactas" : "geocode" };
       } catch (e) {
         return { url, ok: false, motivo: "excepcion:" + e.message };
       }
