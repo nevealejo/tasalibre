@@ -234,12 +234,26 @@ async function getStreetsClassified(lat, lon, radius, calleNombre) {
     // "out geom" (no solo "out tags") — necesitamos las coordenadas de cada
     // tramo de calle para poder calcular su rumbo/orientación real.
     const query = `[out:json][timeout:5];way(around:${radius},${lat},${lon})["highway"]["name"];out geom;`;
-    const res = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST", signal: ctrl.signal,
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`
-    });
-    const data = await res.json();
+    // BLOQUE 31b: se confirmó en vivo (14/07) que overpass-api.de devuelve
+    // una página HTML (no JSON) cuando rate-limita/bloquea al IP compartido
+    // de Vercel — mismo patrón que ya vimos con ArgenProp/Tokko. Se agrega
+    // un mirror público alternativo (kumi.systems) como respaldo automático
+    // si el primero no responde JSON válido.
+    async function pedirOverpass(url) {
+      const r = await fetch(url, {
+        method: "POST", signal: ctrl.signal,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(query)}`
+      });
+      const txt = await r.text();
+      return JSON.parse(txt); // deja que tire si no es JSON (bloqueo/HTML de error)
+    }
+    let data;
+    try {
+      data = await pedirOverpass("https://overpass-api.de/api/interpreter");
+    } catch (e1) {
+      data = await pedirOverpass("https://overpass.kumi.systems/api/interpreter");
+    }
     const p = { residential: 1, secondary: 2, tertiary: 3, primary: 4, unclassified: 5 };
 
     // BLOQUE 31: para cada calle candidata guardamos el punto de su
